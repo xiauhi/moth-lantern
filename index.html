@@ -182,6 +182,9 @@ dl.facts dd { margin: 0; }
 .thumb[aria-current="true"] { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent); }
 .thumb .tn { position: absolute; left: 4px; bottom: 4px; min-width: 22px; padding: 1px 6px; border-radius: 10px; background: rgba(20,22,26,.78); color: #fff; font-size: 12px; font-weight: 600; text-align: center; font-variant-numeric: tabular-nums; }
 .addpage { flex: none; min-height: 44px; justify-content: center; border-style: dashed; }
+.exportbtn { font-size: 13px; padding: 0 8px; margin-top: 4px; }
+.exportbtn .short { display: none; }
+@media (max-width: 720px) { .exportbtn .long { display: none; } .exportbtn .short { display: inline; } .exportbtn { margin-top: 0; } }
 
 .stage { display: flex; flex-direction: column; gap: 8px; min-width: 0; min-height: 0; }
 .tools { display: flex; gap: 8px; align-items: center; overflow-x: auto; padding-bottom: 2px; flex: none; }
@@ -440,9 +443,7 @@ dl.facts dd { margin: 0; }
       <button class="btn" id="zfit" type="button">Fit</button>
       <button class="btn" id="zin" type="button" aria-label="Zoom in">+</button>
       <button class="btn" id="extend" type="button">Page +400 px</button>
-      <button class="btn" id="finger" type="button" aria-pressed="false">Hand: scroll</button>
-      <button class="btn" id="exportbtn" type="button" title="Copies your pages into your Drive folder so Claude can read them">Export to Drive</button>
-    </div>
+      <button class="btn" id="finger" type="button" aria-pressed="false">Hand: scroll</button>    </div>
     <div class="shapebar" id="shapebar" hidden>
       <div class="grp" id="shapes" role="group" aria-label="Shape"></div>
       <div class="grp" id="styles" role="group" aria-label="Line style">
@@ -827,6 +828,9 @@ dl.facts dd { margin: 0; }
     });
     var add = document.createElement('button'); add.className = 'btn addpage'; add.type = 'button'; add.textContent = '+ Page';
     add.addEventListener('click', addPage); box.appendChild(add);
+    var ex = document.createElement('button'); ex.className = 'btn addpage exportbtn'; ex.type = 'button'; ex.id = 'exportbtn';
+    ex.title = 'Copies your pages into your Drive folder so Claude can read them';
+    ex.innerHTML = '<span class="long">↑ Export to Drive</span><span class="short">↑ Drive</span>'; box.appendChild(ex);
   }
   function openPage(i) {
     var token = ++openToken;
@@ -2041,7 +2045,8 @@ dl.facts dd { margin: 0; }
     }).then(function () { exporting = false; say(done ? 'Exported ' + done + ' page' + (done === 1 ? '' : 's') + ' to Drive.' : 'Drive copy is up to date.'); return true; })
       .catch(function (e) { exporting = false; say('Export failed (' + String(e && e.message || e).slice(0, 40) + ').'); return false; });
   }
-  document.getElementById('exportbtn').addEventListener('click', function () {
+  document.getElementById('pages').addEventListener('click', function (e) {
+    if (!e.target.closest || !e.target.closest('#exportbtn')) return;
     flush().then(function () {
       if (gHave()) return exportSketches(true);
       setStatus('Signing in to Google…');
