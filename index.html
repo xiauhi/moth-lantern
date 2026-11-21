@@ -238,6 +238,26 @@ dl.facts dd { margin: 0; }
   .app.dock-open { grid-template-columns: minmax(0, 1fr); }
   .dock { left: 0; right: 0; top: auto; bottom: 0; width: auto; height: 58vh; border-radius: 14px 14px 0 0; box-shadow: 0 -8px 30px rgba(0,0,0,.4); }
 }
+.dd { position: relative; display: inline-block; }
+.dd-trig { gap: 8px; }
+.dd-car { color: var(--muted); font-size: 12px; margin-left: 2px; }
+.dd-trig .ddlab { font: 500 10px ui-monospace, Consolas, monospace; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); }
+.dd-trig .ddi svg { width: 20px; height: 20px; stroke: currentColor; fill: none; stroke-width: 1.8; stroke-linejoin: round; stroke-linecap: round; display: block; }
+.dd-trig .ddi { display: inline-flex; }
+.dd-pop { position: fixed; z-index: 40; min-width: 210px; max-height: calc(100vh - 24px); overflow: auto; display: grid; gap: 4px; padding: 6px; background: var(--panel); border: 1px solid var(--line); border-radius: 12px; box-shadow: 0 14px 40px rgba(0, 0, 0, .45); }
+.dd-pop[hidden] { display: none; }
+.dd-pop .btn, .dd-pop .cchip { width: 100%; justify-content: flex-start; border: 0; border-radius: 8px; background: transparent; min-height: 46px; box-shadow: none; }
+.dd-pop .btn[aria-pressed="true"], .dd-pop .btn.on, .dd-pop .cchip[aria-pressed="true"] { background: var(--accent); color: var(--accent-ink); box-shadow: none; }
+.dd-pop .grp { display: grid; gap: 4px; }
+.dd-grid #shapes { grid-template-columns: repeat(5, 52px); }
+.dd-grid #shapes .btn { width: 52px; min-width: 0; justify-content: center; padding: 0; }
+.dd-grid #shapes .btn svg { width: 26px; height: 26px; stroke: currentColor; fill: none; stroke-width: 1.8; stroke-linejoin: round; stroke-linecap: round; display: block; }
+.shapewrap { display: inline-flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.shapewrap[hidden] { display: none; }
+.compbar { display: inline-flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.pbtn { }
+.dd .sw { box-shadow: 0 0 0 1.5px rgba(255,255,255,.55); }
+.compbar select { max-width: 150px; }
 .cvwrap { position: relative; width: max-content; }
 .guide { position: absolute; inset: 50px; border: 1.5px dashed rgba(70, 95, 150, .5); pointer-events: none; box-sizing: border-box; }
 .guide[hidden] { display: none; }
@@ -275,7 +295,7 @@ dl.facts dd { margin: 0; }
 @media (max-width: 720px) { .exportbtn .long { display: none; } .exportbtn .short { display: inline; } .exportbtn { margin-top: 0; } }
 
 .stage { display: flex; flex-direction: column; gap: 8px; min-width: 0; min-height: 0; }
-.tools { display: flex; gap: 8px; align-items: center; overflow-x: auto; padding-bottom: 2px; flex: none; }
+.tools { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; padding-bottom: 2px; flex: none; position: relative; z-index: 5; }
 .tools .sep { width: 1px; align-self: stretch; background: var(--line); flex: none; margin: 4px 2px; }
 .size { display: flex; align-items: center; gap: 8px; color: var(--muted); font-size: 12px; flex: none; }
 .size input { width: 110px; height: 32px; accent-color: var(--accent); }
@@ -522,40 +542,48 @@ dl.facts dd { margin: 0; }
 
   <main class="stage">
     <div class="tools" role="toolbar" aria-label="Drawing tools">
-      <button class="btn" data-tool="pen" style="--c:#17181c"><span class="sw" style="--c:#17181c"></span>Pen</button>
-      <button class="btn" data-tool="blue" style="--c:#4f86f7"><span class="sw" style="--c:#4f86f7"></span>Blue pencil</button>
-      <button class="btn" data-tool="red"><span class="sw" style="--c:#e0443e"></span>Red note</button>
-      <button class="btn" data-tool="shape"><span class="sw sq" style="--c:#17181c"></span>Shapes &amp; lines</button>
-      <button class="btn" data-tool="panel"><span class="sw sq" style="--c:#17181c"></span>Panel frame</button>
-      <button class="btn" data-tool="eraser"><span class="sw" style="--c:#ffffff"></span>Eraser</button>
-      <button class="btn" data-tool="xform" title="Move, resize or rotate what is on the selected layer"><span class="sw sq" style="--c:#2f64d6"></span>Move / resize</button>
+      <div class="dd" id="dd-tool"><button class="btn dd-trig" type="button" aria-haspopup="true" aria-expanded="false" aria-label="Tool"></button><div class="dd-pop" hidden>
+        <button class="btn" data-tool="pen" style="--c:#17181c"><span class="sw" style="--c:#17181c"></span>Pen</button>
+        <button class="btn" data-tool="blue" style="--c:#4f86f7"><span class="sw" style="--c:#4f86f7"></span>Blue pencil</button>
+        <button class="btn" data-tool="red"><span class="sw" style="--c:#e0443e"></span>Red note</button>
+        <button class="btn" data-tool="shape"><span class="sw sq" style="--c:#17181c"></span>Shapes &amp; lines</button>
+        <button class="btn" data-tool="panel"><span class="sw sq" style="--c:#17181c"></span>Panel frame</button>
+        <button class="btn" data-tool="eraser"><span class="sw" style="--c:#ffffff"></span>Eraser</button>
+        <button class="btn" data-tool="xform" title="Move, resize or rotate what is on the selected layer"><span class="sw sq" style="--c:#2f64d6"></span>Move / resize</button>
+      </div></div>
+      <span class="shapewrap" id="shapebar" hidden>
+        <div class="dd" id="dd-shape"><button class="btn dd-trig" type="button" aria-haspopup="true" aria-expanded="false" aria-label="Shape"></button><div class="dd-pop dd-grid" hidden>
+          <div class="grp" id="shapes" role="group" aria-label="Shape"></div>
+        </div></div>
+        <div class="dd" id="dd-style"><button class="btn dd-trig" type="button" aria-haspopup="true" aria-expanded="false" aria-label="Line style"></button><div class="dd-pop" hidden>
+          <div class="grp" id="styles" role="group" aria-label="Line style">
+            <button class="btn on" data-ls="solid" type="button">Solid</button>
+            <button class="btn" data-ls="dashed" type="button">Dashed</button>
+            <button class="btn" data-ls="dotted" type="button">Dotted</button>
+          </div>
+        </div></div>
+        <div class="dd" id="dd-color"><button class="btn dd-trig" type="button" aria-haspopup="true" aria-expanded="false" aria-label="Colour"></button><div class="dd-pop" hidden>
+          <div class="grp" id="colors" role="group" aria-label="Colour">
+            <button class="btn colr on" data-col="#17181c" type="button" aria-label="Black" style="--c:#17181c"><span class="sw" style="--c:#17181c"></span>Black</button>
+            <button class="btn colr" data-col="#4f86f7" type="button" aria-label="Blue" style="--c:#4f86f7"><span class="sw" style="--c:#4f86f7"></span>Blue</button>
+            <button class="btn colr" data-col="#e0443e" type="button" aria-label="Red" style="--c:#e0443e"><span class="sw" style="--c:#e0443e"></span>Red</button>
+            <button class="btn colr" data-col="#8a8f99" type="button" aria-label="Grey" style="--c:#8a8f99"><span class="sw" style="--c:#8a8f99"></span>Grey</button>
+          </div>
+        </div></div>
+      </span>
+      <span class="compbar" id="compbar" aria-label="What you are drawing"></span>
       <label class="size" for="size">Size <input id="size" type="range" min="2" max="24" value="5"></label>
-      <span class="sep"></span>
       <button class="btn" id="zout" type="button" aria-label="Zoom out">−</button>
       <button class="btn" id="zfit" type="button">Fit</button>
       <button class="btn" id="zin" type="button" aria-label="Zoom in">+</button>
-      <button class="btn" id="extend" type="button">Page +400 px</button>
-      <button class="btn" id="finger" type="button" aria-pressed="false">Hand: scroll</button>
-      
-      
-      <button class="btn" id="clipbtn" type="button" aria-pressed="false" title="When on, your pen only draws inside the selected panel">Clip to panel</button>
-      <button class="btn" id="guidebtn" type="button" aria-pressed="true" title="Faint dashed margin line. It is only a guide: it is not saved into the page, and you can draw past it.">Guide</button>    </div>
-    <div class="polybar" id="polybar" hidden><span id="polyinfo">0 corners</span><button class="btn" id="polyclose" type="button">Close frame</button><button class="btn" id="polyundo" type="button">Undo corner</button><button class="btn" id="polycancel" type="button">Cancel</button></div>
-    <div class="compbar" id="compbar" aria-label="What you are drawing"></div>
-    <div class="shapebar" id="shapebar" hidden>
-      <div class="grp" id="shapes" role="group" aria-label="Shape"></div>
-      <div class="grp" id="styles" role="group" aria-label="Line style">
-        <button class="btn on" data-ls="solid" type="button">Solid</button>
-        <button class="btn" data-ls="dashed" type="button">Dashed</button>
-        <button class="btn" data-ls="dotted" type="button">Dotted</button>
-      </div>
-      <div class="grp" id="colors" role="group" aria-label="Colour">
-        <button class="btn colr on" data-col="#17181c" type="button" aria-label="Black" style="--c:#17181c"><span class="sw" style="--c:#17181c"></span></button>
-        <button class="btn colr" data-col="#4f86f7" type="button" aria-label="Blue" style="--c:#4f86f7"><span class="sw" style="--c:#4f86f7"></span></button>
-        <button class="btn colr" data-col="#e0443e" type="button" aria-label="Red" style="--c:#e0443e"><span class="sw" style="--c:#e0443e"></span></button>
-        <button class="btn colr" data-col="#8a8f99" type="button" aria-label="Grey" style="--c:#8a8f99"><span class="sw" style="--c:#8a8f99"></span></button>
-      </div>
+      <div class="dd" id="dd-more"><button class="btn dd-trig" type="button" aria-haspopup="true" aria-expanded="false" aria-label="More">More</button><div class="dd-pop" hidden>
+        <button class="btn" id="extend" type="button">Page +400 px</button>
+        <button class="btn" id="finger" type="button" aria-pressed="false">Hand: scroll</button>
+        <button class="btn" id="clipbtn" type="button" aria-pressed="false" title="When on, your pen only draws inside the selected panel">Clip to panel</button>
+        <button class="btn" id="guidebtn" type="button" aria-pressed="true" title="Faint dashed margin line. It is only a guide: it is not saved into the page, and you can draw past it.">Margin guide</button>
+      </div></div>
     </div>
+    <div class="polybar" id="polybar" hidden><span id="polyinfo">0 corners</span><button class="btn" id="polyclose" type="button">Close frame</button><button class="btn" id="polyundo" type="button">Undo corner</button><button class="btn" id="polycancel" type="button">Cancel</button></div>
     <div class="scroller" id="scroller">
       <div class="sheet">
         <p class="pagelabel" id="pagelabel"></p>
@@ -964,10 +992,12 @@ dl.facts dd { margin: 0; }
   }
   function renderCompbar() {
     var bar = document.getElementById('compbar'); if (!bar) return; bar.textContent = '';
-    bar.appendChild(mk('span', 'complab', 'Drawing'));
+    var dd = mk('div', 'dd'), trig = bt('', 'btn dd-trig'), pop = mk('div', 'dd-pop'); pop.hidden = true; trig.setAttribute('aria-haspopup', 'true'); trig.setAttribute('aria-expanded', 'false'); trig.setAttribute('aria-label', 'What you are drawing');
     COMPONENTS.forEach(function (c) {
-      var b = bt(c.n, 'cchip'); b.style.setProperty('--c', c.c); b.setAttribute('aria-pressed', String(curComponent === c.k)); b.addEventListener('click', function () { chooseComponent(c.k); }); bar.appendChild(b);
+      var b = bt(c.n, 'cchip'); b.style.setProperty('--c', c.c); b.setAttribute('aria-pressed', String(curComponent === c.k)); b.addEventListener('click', function () { chooseComponent(c.k); }); pop.appendChild(b);
     });
+    dd.append(trig, pop); bar.appendChild(dd);
+    ddInit(dd, function () { var c = compOf(curComponent); return '<span class="ddlab">Drawing</span><span class="ldot" style="background:' + c.c + '"></span>' + esc(c.n); });
     if (curComponent === 'character') bar.appendChild(charSelect(layerLive(activeL) && activeL.component === 'character' ? activeL.ref : (curChar && curChar.id) || '', applyChar));
   }
 
@@ -1301,6 +1331,7 @@ dl.facts dd { margin: 0; }
     tool = t; if (t === 'xform') xformEnter(); if (t === 'panel') setStatus('Drag one side at a time. Corners snap together; end on the blue ring (the first corner) to close the frame.');
     document.querySelectorAll('[data-tool]').forEach(function (b) { b.classList.toggle('on', b.dataset.tool === t); });
     document.getElementById('shapebar').hidden = t !== 'shape';
+    if (typeof ddRefreshAll === 'function') ddRefreshAll();
   }
   (function buildShapeBar() {
     var box = document.getElementById('shapes');
@@ -1326,6 +1357,43 @@ dl.facts dd { margin: 0; }
   })();
   document.querySelectorAll('[data-tool]').forEach(function (b) { b.addEventListener('click', function () { selectTool(b.dataset.tool); }); });
   selectTool('pen');
+  /* ---------- dropdown menus (the buttons stay real buttons, they just live inside a menu) ---------- */
+  var ddList = ddList || [];
+  function ddCloseAll() { (ddList || []).forEach(function (d) { d.pop.hidden = true; d.trig.setAttribute('aria-expanded', 'false'); }); }
+  function ddInit(el, label, keepOpen) {
+    if (!ddList) ddList = [];
+    var trig = el.querySelector('.dd-trig'), pop = el.querySelector('.dd-pop'), d = { el: el, trig: trig, pop: pop };
+    function refresh() { trig.innerHTML = label() + '<span class="dd-car" aria-hidden="true">\u25be</span>'; }
+    function place() {
+      var r = trig.getBoundingClientRect(); pop.style.left = '0px'; pop.style.top = '0px'; pop.hidden = false;
+      var pw = pop.offsetWidth, ph = pop.offsetHeight, left = Math.min(Math.max(8, r.left), Math.max(8, window.innerWidth - pw - 8)), top = r.bottom + 6;
+      if (top + ph > window.innerHeight - 8 && r.top - ph - 6 > 8) top = r.top - ph - 6;
+      pop.style.left = left + 'px'; pop.style.top = top + 'px';
+    }
+    trig.addEventListener('click', function (e) {
+      e.stopPropagation(); var wasOpen = !pop.hidden; ddCloseAll();
+      if (!wasOpen) { place(); trig.setAttribute('aria-expanded', 'true'); }
+    });
+    pop.addEventListener('click', function (e) {
+      e.stopPropagation(); var b = e.target.closest ? e.target.closest('button') : null; if (!b) return;
+      refresh(); if (!(keepOpen && keepOpen(b))) { pop.hidden = true; trig.setAttribute('aria-expanded', 'false'); }
+    });
+    d.refresh = refresh; ddList = ddList.filter(function (x) { return x.el !== el && document.body.contains(x.el); }); ddList.push(d); refresh(); return d;
+  }
+  function ddRefreshAll() { ddList.forEach(function (d) { if (document.body.contains(d.el)) d.refresh(); }); }
+  document.addEventListener('click', ddCloseAll);
+  document.addEventListener('keydown', function (e) { if (e.key === 'Escape') ddCloseAll(); });
+  window.addEventListener('resize', ddCloseAll);
+  scroller.addEventListener('scroll', ddCloseAll);
+  function onText(sel) { var b = document.querySelector(sel); return b ? b.innerHTML : ''; }
+  function initDropdowns() {
+    ddInit(document.getElementById('dd-tool'), function () { return onText('[data-tool].on') || 'Tool'; });
+    ddInit(document.getElementById('dd-shape'), function () { var b = document.querySelector('#shapes .on'); return b ? '<span class="ddi">' + b.innerHTML + '</span>' + esc(b.title || 'Shape') : 'Shape'; });
+    ddInit(document.getElementById('dd-style'), function () { var b = document.querySelector('#styles .on'); return b ? esc(b.textContent) : 'Line'; });
+    ddInit(document.getElementById('dd-color'), function () { return onText('#colors .on') || 'Colour'; });
+    ddInit(document.getElementById('dd-more'), function () { return 'More'; }, function (b) { return b.id === 'finger' || b.id === 'guidebtn' || b.id === 'clipbtn'; });
+  }
+  initDropdowns();
   document.getElementById('undo').addEventListener('click', undo);
   document.getElementById('redo').addEventListener('click', redo);
   document.addEventListener('keydown', function (e) {
