@@ -604,9 +604,8 @@ dl.facts dd { margin: 0; }
       </span>
       <span class="compbar" id="compbar" aria-label="What you are drawing"></span>
       <label class="size" for="size">Size <input id="size" type="range" min="2" max="24" value="5"></label>
-      <button class="btn" id="zout" type="button" aria-label="Zoom out">−</button>
+      <label class="size" for="zoomr">Zoom <input id="zoomr" type="range" min="25" max="300" step="1" value="100"></label>
       <button class="btn" id="zfit" type="button">Fit</button>
-      <button class="btn" id="zin" type="button" aria-label="Zoom in">+</button>
       <div class="dd" id="dd-more"><button class="btn dd-trig" type="button" aria-haspopup="true" aria-expanded="false" aria-label="More">More</button><div class="dd-pop" hidden>
         <button class="btn" id="extend" type="button">Page +400 px</button>
         <button class="btn" id="finger" type="button" aria-pressed="false">Hand: scroll</button>
@@ -708,7 +707,7 @@ dl.facts dd { margin: 0; }
     layers.forEach(function (L) { if (L.cv.height !== h) { var nc = mkCanvas(h); nc.getContext('2d').drawImage(L.cv, 0, 0); L.cv = nc; L.cx = nc.getContext('2d'); } });
     applyZoom();
   }
-  function applyZoom() { cv.style.width = Math.round(W * zoom) + 'px'; cv.style.height = Math.round(H * zoom) + 'px'; if (typeof applyGuide === 'function') applyGuide(); if (typeof renderPanels === 'function') renderPanels(); }
+  function applyZoom() { var zr = document.getElementById('zoomr'); if (zr) zr.value = String(Math.round(zoom * 100)); cv.style.width = Math.round(W * zoom) + 'px'; cv.style.height = Math.round(H * zoom) + 'px'; if (typeof applyGuide === 'function') applyGuide(); if (typeof renderPanels === 'function') renderPanels(); }
   function fit() { zoom = Math.max(0.3, Math.min(2, (scroller.clientWidth - 32) / W)); applyZoom(); }
   function onLayer(L, fn) { var keep = ctx; ctx = L.cx; try { fn(); } finally { ctx = keep; } }
   function redrawLayer(L) {
@@ -1552,8 +1551,11 @@ dl.facts dd { margin: 0; }
     disarmClean(); commitPending(); var L = ensureLayer(); L.ops.push({ t: 'c' }); L.ver++; L.dirty = true; hist.push({ L: L, op: L.ops[L.ops.length - 1], panel: null }); redoH = [];
     redrawLayer(L); paint(); updateButtons(); markDirty(); setStatus('Layer cleaned. Undo brings it back.');
   });
-  document.getElementById('zin').addEventListener('click', function () { autoFit = false; zoom = Math.min(2.5, zoom * 1.25); applyZoom(); });
-  document.getElementById('zout').addEventListener('click', function () { autoFit = false; zoom = Math.max(0.25, zoom / 1.25); applyZoom(); });
+  document.getElementById('zoomr').addEventListener('input', function (e) {
+    var old = zoom, cx = (scroller.scrollLeft + scroller.clientWidth / 2) / old, cy = (scroller.scrollTop + scroller.clientHeight / 2) / old;
+    autoFit = false; zoom = Math.max(0.25, Math.min(3, +e.target.value / 100)); applyZoom();
+    scroller.scrollLeft = cx * zoom - scroller.clientWidth / 2; scroller.scrollTop = cy * zoom - scroller.clientHeight / 2;
+  });
   document.getElementById('zfit').addEventListener('click', function () { autoFit = true; fit(); });
   window.addEventListener('resize', function () { if (autoFit) fit(); });
   document.getElementById('extend').addEventListener('click', function () {
