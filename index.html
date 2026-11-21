@@ -192,6 +192,46 @@ dl.facts dd { margin: 0; }
 .pcard input, .pcard textarea { width: 100%; box-sizing: border-box; border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; background: var(--panel); color: inherit; font: inherit; font-size: 16px; }
 .pcard textarea { min-height: 70px; resize: vertical; }
 .pcard .acts { display: flex; gap: 8px; flex-wrap: wrap; }
+.compbar { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; flex: none; }
+.complab { font: 500 11px ui-monospace, Consolas, monospace; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); margin-right: 2px; }
+.cchip { display: inline-flex; align-items: center; gap: 7px; min-height: 36px; padding: 0 12px; border: 1px solid var(--line); border-radius: 999px; background: var(--panel); color: var(--fg); font: 600 13px var(--font-body); cursor: pointer; }
+.cchip::before { content: ""; width: 9px; height: 9px; border-radius: 50%; background: var(--c); }
+.cchip[aria-pressed="true"] { border-color: var(--c); background: color-mix(in srgb, var(--c) 18%, var(--panel)); box-shadow: 0 0 0 1px var(--c); }
+.charsel, .dock-edit select { min-height: 36px; border: 1px solid var(--line); border-radius: 8px; padding: 0 8px; background: var(--panel); color: inherit; font: inherit; font-size: 14px; max-width: 220px; }
+.app.dock-open { grid-template-columns: 128px minmax(0, 1fr) 300px; }
+.dock { grid-column: 3; grid-row: 2; display: flex; flex-direction: column; min-height: 0; border: 1px solid var(--line); border-radius: 10px; background: var(--panel); overflow: hidden; }
+.dock[hidden] { display: none; }
+.dock-head { display: flex; align-items: center; gap: 8px; padding: 8px 10px; border-bottom: 1px solid var(--line); flex: none; }
+.dock-head b { flex: 1; font-family: var(--font-display); }
+.dock-head .btn { min-height: 36px; padding: 0 12px; }
+.dock-list { flex: 1 1 40%; min-height: 120px; overflow-y: auto; padding: 8px; display: grid; gap: 4px; align-content: start; }
+.dock-edit { flex: 0 1 auto; max-height: 55%; overflow-y: auto; border-top: 1px solid var(--line); padding: 10px; display: grid; gap: 8px; }
+.lgrp { display: flex; align-items: baseline; gap: 8px; width: 100%; min-height: 36px; margin-top: 6px; padding: 0 8px; border: 0; border-radius: 6px; background: transparent; color: var(--fg); text-align: left; cursor: pointer; }
+.lgrp small { color: var(--muted); margin-left: auto; }
+.lgrp[aria-pressed="true"] { background: color-mix(in srgb, var(--accent) 16%, transparent); }
+.lrow { display: grid; grid-template-columns: 30px 10px minmax(0, 1fr) 34px 34px; align-items: center; gap: 4px; padding: 2px 4px; border: 1px solid transparent; border-radius: 8px; cursor: pointer; }
+.lrow.on { border-color: var(--accent); background: color-mix(in srgb, var(--accent) 12%, transparent); }
+.lrow .ltxt { display: grid; min-width: 0; }
+.lrow .lname { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-weight: 600; font-size: 14px; }
+.lrow small { color: var(--muted); font-size: 11px; }
+.ldot { width: 10px; height: 10px; border-radius: 50%; }
+.leye, .lmv { min-height: 34px; min-width: 30px; border: 0; background: transparent; color: var(--muted); cursor: pointer; padding: 0; font-size: 13px; }
+.lnone2 { color: var(--muted); font-size: 13px; padding: 4px 8px; }
+.lfield { display: grid; gap: 4px; }
+.lflab { font: 500 11px ui-monospace, Consolas, monospace; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); }
+.dock-edit input[type=text], .dock-edit textarea { width: 100%; box-sizing: border-box; border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; background: var(--bg); color: inherit; font: inherit; font-size: 16px; }
+.dock-edit select { max-width: none; width: 100%; }
+.dock-edit textarea { min-height: 96px; resize: vertical; }
+.dock-edit .acts { display: flex; gap: 6px; flex-wrap: wrap; }
+.dock-edit .btn.ghost { min-height: 36px; padding: 0 10px; font-size: 13px; background: transparent; }
+@media (max-width: 1000px) {
+  .app.dock-open { grid-template-columns: 128px minmax(0, 1fr); }
+  .dock { position: fixed; right: 0; top: 0; bottom: 0; width: min(340px, 92vw); z-index: 12; border-radius: 14px 0 0 14px; box-shadow: -8px 0 30px rgba(0,0,0,.4); grid-column: auto; grid-row: auto; }
+}
+@media (max-width: 720px) {
+  .app.dock-open { grid-template-columns: minmax(0, 1fr); }
+  .dock { left: 0; right: 0; top: auto; bottom: 0; width: auto; height: 58vh; border-radius: 14px 14px 0 0; box-shadow: 0 -8px 30px rgba(0,0,0,.4); }
+}
 .cvwrap { position: relative; width: max-content; }
 .guide { position: absolute; inset: 50px; border: 1.5px dashed rgba(70, 95, 150, .5); pointer-events: none; box-sizing: border-box; }
 .guide[hidden] { display: none; }
@@ -487,9 +527,11 @@ dl.facts dd { margin: 0; }
       <button class="btn" id="zin" type="button" aria-label="Zoom in">+</button>
       <button class="btn" id="extend" type="button">Page +400 px</button>
       <button class="btn" id="finger" type="button" aria-pressed="false">Hand: scroll</button>
+      <button class="btn" id="layersbtn" type="button" aria-pressed="false" title="Layers: what each thing is and what is in front of what">Layers</button>
       <button class="btn" id="panelsbtn" type="button" title="Names and notes for the panels on this page">Panels</button>
       <button class="btn" id="clipbtn" type="button" aria-pressed="false" title="When on, your pen only draws inside the selected panel">Clip to panel</button>
       <button class="btn" id="guidebtn" type="button" aria-pressed="true" title="Faint dashed margin line. It is only a guide: it is not saved into the page, and you can draw past it.">Guide</button>    </div>
+    <div class="compbar" id="compbar" aria-label="What you are drawing"></div>
     <div class="shapebar" id="shapebar" hidden>
       <div class="grp" id="shapes" role="group" aria-label="Shape"></div>
       <div class="grp" id="styles" role="group" aria-label="Line style">
@@ -515,6 +557,11 @@ dl.facts dd { margin: 0; }
       <textarea id="notes" hidden placeholder="Dialogue and notes for this page. Panel by panel: who is where, camera angle, what is said."></textarea>
     </div>
   </main>
+  <aside class="dock" id="dock" hidden aria-label="Layers">
+    <div class="dock-head"><b>Layers</b><button class="btn" id="newlayer" type="button">+ Layer</button><button class="btn" id="dockclose" type="button" aria-label="Close layers">✕</button></div>
+    <div class="dock-list" id="dock-list"></div>
+    <div class="dock-edit" id="dock-edit"></div>
+  </aside>
 </section>
 </div>
 
@@ -605,9 +652,9 @@ dl.facts dd { margin: 0; }
     });
   }
   /* put every visible layer on the screen canvas (the old flat pictures use "multiply" so their white paper does not hide the layers below) */
-  function paint(extra) {
+  function paint(extra, all) {
     ctx = mctx; ctx.globalCompositeOperation = 'source-over'; ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, W, H);
-    layers.forEach(function (L) { if (!L.visible) return; ctx.globalCompositeOperation = L.flat ? 'multiply' : 'source-over'; ctx.drawImage(L.cv, 0, 0); });
+    layers.forEach(function (L) { if (!L.visible && !all) return; ctx.globalCompositeOperation = L.flat ? 'multiply' : 'source-over'; ctx.drawImage(L.cv, 0, 0); });
     ctx.globalCompositeOperation = 'source-over';
     if (extra) drawOp(extra);
     if (pending) { drawOp(pending.op); drawHandle(); }
@@ -702,22 +749,24 @@ dl.facts dd { margin: 0; }
     if (!activeL) { activeL = newLayer({ name: 'Layer 1' }); layers.push(activeL); }
     return activeL;
   }
+  function dropEmptyDefault() { layers = layers.filter(function (L) { return !(layerEmpty(L) && L.name === 'Layer 1' && L.component === 'other' && !L.panel); }); if (activeL && layers.indexOf(activeL) < 0) activeL = null; }
   function addOp(L, op, panel) {
     L.ops.push(op); L.ver++; L.dirty = true; hist.push({ L: L, op: op, panel: panel || null }); redoH = []; updateButtons(); markDirty();
   }
   function undo() {
     if (pending) { cancelPending(); return; }
-    var e = hist.pop(); if (!e) return;
+    var e = hist.pop(); while (e && layers.indexOf(e.L) < 0) e = hist.pop(); if (!e) return;
     var i = e.L.ops.lastIndexOf(e.op); if (i >= 0) e.L.ops.splice(i, 1);
     e.L.ver++; e.L.dirty = true; redrawLayer(e.L);
-    if (e.panel) { panelsList = panelsList.filter(function (q) { return q !== e.panel; }); if (activePanel === e.panel.id) activePanel = null; }
-    redoH.push(e); paint(); renderPanels(); updateButtons(); markDirty();
+    if (e.panel) { panelsList = panelsList.filter(function (q) { return q !== e.panel; }); if (activePanel === e.panel.id) activePanel = null; if (layerEmpty(e.L)) { layers = layers.filter(function (x) { return x !== e.L; }); e.dropped = true; } }
+    redoH.push(e); paint(); renderPanels(); renderLayers(); updateButtons(); markDirty();
   }
   function redo() {
-    if (pending) return; var e = redoH.pop(); if (!e) return;
+    if (pending) return; var e = redoH.pop(); while (e && !e.dropped && layers.indexOf(e.L) < 0) e = redoH.pop(); if (!e) return;
+    if (e.dropped) { layers.push(e.L); e.dropped = false; }
     e.L.ops.push(e.op); e.L.ver++; e.L.dirty = true; hist.push(e); redrawLayer(e.L);
     if (e.panel) { panelsList.push(e.panel); activePanel = e.panel.id; }
-    paint(); renderPanels(); updateButtons(); markDirty();
+    paint(); renderPanels(); renderLayers(); updateButtons(); markDirty();
   }
   /* curve tool: the curve waits for a bend. The dot sits on the middle of the curve; drag it, then tap elsewhere to finish. */
   function handlePt(o) { return [0.25 * o.x0 + 0.5 * o.cx + 0.25 * o.x1, 0.25 * o.y0 + 0.5 * o.cy + 0.25 * o.y1]; }
@@ -779,7 +828,7 @@ dl.facts dd { margin: 0; }
       go.onclick = function () { selectPanel(pn.id); closeX(o); scroller.scrollTop = Math.max(0, pn.y * zoom - 20); };
       del.onclick = function () {
         if (!del.classList.contains('armed')) { del.classList.add('armed'); del.textContent = 'Tap again to delete'; setTimeout(function () { del.classList.remove('armed'); del.textContent = 'Delete panel'; }, 3500); return; }
-        panelsList = panelsList.filter(function (q) { return q !== pn; }); layers.forEach(function (L) { if (L.panel === pn.id) { L.panel = null; L.dirty = true; } }); if (activePanel === pn.id) activePanel = null;
+        panelsList = panelsList.filter(function (q) { return q !== pn; }); layers.forEach(function (L) { if (L.panel === pn.id) L.panel = null; }); if (activePanel === pn.id) activePanel = null;
         panelsChanged(); closeX(o); showPanelManager();
       };
       row.append(go, del); card.append(name, notes, row); body.appendChild(card);
@@ -789,6 +838,173 @@ dl.facts dd { margin: 0; }
   var clipBtn = document.getElementById('clipbtn');
   clipBtn.addEventListener('click', function () { clipOn = !clipOn; clipBtn.setAttribute('aria-pressed', String(clipOn)); setStatus(clipOn ? 'Drawing is kept inside the selected panel.' : 'Drawing is free again.'); });
   function clipArg() { var pn = clipOn && activePanel ? panelById(activePanel) : null; return pn ? [pn.x, pn.y, pn.w, pn.h] : null; }
+
+  /* ---------- components + layers: what each thing is, which panel it is in, and what is in front of what ---------- */
+  var COMPONENTS = [
+    { k: 'character', n: 'Character', c: '#d6694a' }, { k: 'background', n: 'Background', c: '#3f9b72' }, { k: 'furniture', n: 'Furniture', c: '#c9a227' },
+    { k: 'prop', n: 'Prop / item', c: '#2f64d6' }, { k: 'effect', n: 'Effect', c: '#8a6fe0' }, { k: 'text', n: 'Text / dialogue', c: '#1f9aa8' },
+    { k: 'border', n: 'Panel border', c: '#6b6e76' }, { k: 'other', n: 'Other', c: '#9aa0aa' }
+  ];
+  var curComponent = 'other', curChar = null, charCache = {};
+  function compOf(k) { for (var i = 0; i < COMPONENTS.length; i++) if (COMPONENTS[i].k === k) return COMPONENTS[i]; return COMPONENTS[COMPONENTS.length - 1]; }
+  function layerEmpty(L) { return !L.base && !L.ops.length; }
+  function autoName(k) { return compOf(k).n + ' ' + (layers.filter(function (x) { return x.component === k; }).length + 1); }
+  function layerLive(L) { return !!L && layers.indexOf(L) >= 0; }
+  function newLayerFromSelection() {
+    if (layers.length >= MAX_LAYERS) { setStatus('One page can hold ' + MAX_LAYERS + ' layers. Reuse or delete one.'); return layerLive(activeL) ? activeL : layers[layers.length - 1]; }
+    dropEmptyDefault(); var isChar = curComponent === 'character' && curChar;
+    var L = newLayer({ component: curComponent, panel: activePanel, ref: isChar ? curChar.id : '', name: isChar ? curChar.name : autoName(curComponent) });
+    layers.push(L); activeL = L; renderLayers(); renderCompbar(); markDirty(); return L;
+  }
+  /* which layer a new stroke goes to: the selected one, unless there is none or it belongs to another panel */
+  function targetLayer() {
+    var L = layerLive(activeL) ? activeL : null;
+    if (L && activePanel && L.panel !== activePanel) L = null;
+    return L || newLayerFromSelection();
+  }
+  function chooseComponent(k) {
+    commitPending(); curComponent = k; var L = layerLive(activeL) ? activeL : null;
+    if (L && L.component !== k) {
+      if (layerEmpty(L)) { L.component = k; L.name = k === 'character' && curChar ? curChar.name : autoName(k); L.ref = k === 'character' && curChar ? curChar.id : ''; markDirty(); }
+      else newLayerFromSelection();
+    }
+    renderCompbar(); renderLayers();
+  }
+  function selectLayer(L) {
+    commitPending(); activeL = L; activePanel = L.panel || null; curComponent = L.component; if (L.ref) curChar = { id: L.ref, name: L.name };
+    renderPanels(); renderCompbar(); renderLayers();
+  }
+  function onPanelSelected() {
+    if (layerLive(activeL) && activeL.panel !== activePanel) {
+      var inPanel = layers.filter(function (L) { return L.panel === activePanel && L.component !== 'border'; });
+      activeL = inPanel[inPanel.length - 1] || null;
+    }
+    renderCompbar(); renderLayers();
+  }
+  function deleteLayer(L) {
+    var i = layers.indexOf(L); if (i < 0) return;
+    layers.splice(i, 1); hist = hist.filter(function (e) { return e.L !== L; }); redoH = redoH.filter(function (e) { return e.L !== L; });
+    if (activeL === L) activeL = layers[Math.max(0, i - 1)] || null;
+    if (!layers.length) ensureLayer();
+    paint(); markDirty(); renderLayers(); renderCompbar(); updateButtons();
+  }
+  function moveLayer(L, dir) {
+    var i = layers.indexOf(L), g = L.panel || null, j = i + dir;
+    while (j >= 0 && j < layers.length && (layers[j].panel || null) !== g) j += dir;
+    if (j < 0 || j >= layers.length) return;
+    var t = layers[j]; layers[j] = L; layers[i] = t; paint(); markDirty(); renderLayers();
+  }
+  function showOnly(L) { layers.forEach(function (x) { x.visible = x === L; }); paint(); renderLayers(); }
+  function showAllLayers() { layers.forEach(function (x) { x.visible = true; }); paint(); renderLayers(); }
+
+  /* the characters come from the Bible: tea/bible/characters.md in Drive */
+  function loadChars(k) {
+    if (!charCache[k]) charCache[k] = folderPath([DRIVE_ROOT, k, 'bible']).then(listFiles).then(function (fs) {
+      var f = fs.filter(function (x) { return x.name === 'characters.md'; })[0]; if (!f) return [];
+      return readDoc(f).then(function (tx) { return parseChars(tx).map(function (c) { return { id: c.id, name: c.name.replace(/ ".*?"/, '').replace(/"/g, ''), group: c.group }; }); });
+    }).catch(function (e) { delete charCache[k]; throw e; });
+    return charCache[k];
+  }
+  function charSelect(currentId, onPick) {
+    var sel = document.createElement('select'); sel.className = 'charsel'; sel.setAttribute('aria-label', 'Which character');
+    function opt(v, t) { var o = document.createElement('option'); o.value = v; o.textContent = t; return o; }
+    var list = [];
+    function fill() {
+      sel.textContent = ''; sel.appendChild(opt('', 'Which character?'));
+      if (!gHave()) { sel.appendChild(opt('__connect', 'Connect Google Drive to list your characters')); }
+      else {
+        var groups = {}; list.forEach(function (c) { (groups[c.group || 'Characters'] = groups[c.group || 'Characters'] || []).push(c); });
+        Object.keys(groups).forEach(function (g) { var og = document.createElement('optgroup'); og.label = g; groups[g].forEach(function (c) { og.appendChild(opt(c.id, c.name)); }); sel.appendChild(og); });
+      }
+      sel.appendChild(opt('__other', 'Someone else (type a name)…'));
+      if (currentId && !Array.prototype.some.call(sel.options, function (o) { return o.value === currentId; })) sel.insertBefore(opt(currentId, curChar && curChar.id === currentId ? curChar.name : currentId), sel.options[1]);
+      sel.value = currentId || '';
+    }
+    fill();
+    if (gHave()) loadChars(proj).then(function (cs) { list = cs; fill(); }).catch(function () {});
+    sel.addEventListener('change', function () {
+      var v = sel.value;
+      if (v === '__connect') { gConnect().then(function () { return loadChars(proj); }).then(function (cs) { list = cs; fill(); }).catch(function () { fill(); }); return; }
+      if (v === '__other') { var nm = prompt('Character name'); if (!nm || !nm.trim()) { sel.value = currentId || ''; return; } onPick({ id: 'custom-' + slug(nm), name: nm.trim() }); return; }
+      if (!v) return;
+      var c = list.filter(function (x) { return x.id === v; })[0]; onPick(c ? { id: c.id, name: c.name } : { id: v, name: v });
+    });
+    return sel;
+  }
+  function applyChar(c) {
+    curChar = c; var L = layerLive(activeL) ? activeL : null;
+    if (L && L.component === 'character') { L.ref = c.id; L.name = c.name; markDirty(); }
+    else if (!L && curComponent === 'character') { newLayerFromSelection(); }
+    renderCompbar(); renderLayers();
+  }
+  function renderCompbar() {
+    var bar = document.getElementById('compbar'); if (!bar) return; bar.textContent = '';
+    bar.appendChild(mk('span', 'complab', 'Drawing'));
+    COMPONENTS.forEach(function (c) {
+      var b = bt(c.n, 'cchip'); b.style.setProperty('--c', c.c); b.setAttribute('aria-pressed', String(curComponent === c.k)); b.addEventListener('click', function () { chooseComponent(c.k); }); bar.appendChild(b);
+    });
+    if (curComponent === 'character') bar.appendChild(charSelect(layerLive(activeL) && activeL.component === 'character' ? activeL.ref : (curChar && curChar.id) || '', applyChar));
+  }
+
+  /* the Layers panel (dock): grouped by panel, front on top, with a description box for the selected layer */
+  var dockEl = document.getElementById('dock'), dockBtn = document.getElementById('layersbtn');
+  function setDock(open) {
+    dockEl.hidden = !open; document.getElementById('v-sketch').classList.toggle('dock-open', open); dockBtn.setAttribute('aria-pressed', String(open));
+    try { localStorage.setItem('ml-dock', open ? '1' : '0'); } catch (e) {}
+    if (open) renderLayers(); requestAnimationFrame(function () { if (autoFit) fit(); });
+  }
+  dockBtn.addEventListener('click', function () { setDock(dockEl.hidden); });
+  document.getElementById('dockclose').addEventListener('click', function () { setDock(false); });
+  document.getElementById('newlayer').addEventListener('click', function () { commitPending(); newLayerFromSelection(); });
+  function renderLayers() {
+    if (!dockEl || dockEl.hidden) return;
+    var list = document.getElementById('dock-list'); list.textContent = '';
+    var groups = panelsList.map(function (p) { return { id: p.id, name: p.name }; }); groups.push({ id: null, name: 'No panel' });
+    groups.forEach(function (g) {
+      var items = layers.filter(function (L) { return (L.panel || null) === g.id; }).reverse();
+      if (!items.length && g.id === null) return;
+      var head = bt('', 'lgrp'); head.setAttribute('aria-pressed', String(activePanel === g.id && g.id !== null));
+      head.appendChild(mk('b', '', g.name)); head.appendChild(mk('small', '', items.length + (items.length === 1 ? ' layer' : ' layers')));
+      if (g.id) head.addEventListener('click', function () { selectPanel(g.id); });
+      list.appendChild(head);
+      if (!items.length) list.appendChild(mk('div', 'lnone2', 'No layers yet. Draw in this panel or tap + Layer.'));
+      items.forEach(function (L) {
+        var row = mk('div', 'lrow' + (L === activeL ? ' on' : '')), eye = bt(L.visible ? '●' : '○', 'leye'), dot = mk('span', 'ldot'), name = mk('span', 'lname', L.name || compOf(L.component).n), sub = mk('small', '', compOf(L.component).n);
+        eye.title = L.visible ? 'Hide this layer' : 'Show this layer'; eye.setAttribute('aria-label', eye.title); dot.style.background = compOf(L.component).c;
+        eye.addEventListener('click', function (e) { e.stopPropagation(); L.visible = !L.visible; paint(); renderLayers(); });
+        var up = bt('▲', 'lmv'), dn = bt('▼', 'lmv'); up.title = 'Bring forward'; dn.title = 'Send back'; up.setAttribute('aria-label', 'Bring forward'); dn.setAttribute('aria-label', 'Send back');
+        up.addEventListener('click', function (e) { e.stopPropagation(); moveLayer(L, 1); }); dn.addEventListener('click', function (e) { e.stopPropagation(); moveLayer(L, -1); });
+        var txt = mk('span', 'ltxt'); txt.append(name, sub);
+        row.append(eye, dot, txt, up, dn); row.addEventListener('click', function () { selectLayer(L); }); list.appendChild(row);
+      });
+    });
+    renderLayerEdit();
+  }
+  function renderLayerEdit() {
+    var box = document.getElementById('dock-edit'); box.textContent = ''; var L = layerLive(activeL) ? activeL : null;
+    if (!L) { box.appendChild(mk('div', 'lnone2', 'Pick a layer to name it and describe what you drew.')); return; }
+    function field(label, el) { var f = mk('label', 'lfield'); f.appendChild(mk('span', 'lflab', label)); f.appendChild(el); box.appendChild(f); return el; }
+    var nm = document.createElement('input'); nm.type = 'text'; nm.value = L.name || ''; nm.placeholder = 'Short name, e.g. Val at the window';
+    nm.addEventListener('input', function () { L.name = nm.value; markDirty(); var t = document.querySelector('#dock-list .lrow.on .lname'); if (t) t.textContent = L.name || compOf(L.component).n; });
+    field('Name', nm);
+    var cs = document.createElement('select'); COMPONENTS.forEach(function (c) { var o = document.createElement('option'); o.value = c.k; o.textContent = c.n; cs.appendChild(o); }); cs.value = L.component;
+    cs.addEventListener('change', function () { L.component = cs.value; if (cs.value !== 'character') L.ref = ''; curComponent = L.component; markDirty(); renderCompbar(); renderLayers(); }); field('Component', cs);
+    if (L.component === 'character') field('Character', charSelect(L.ref, function (c) { L.ref = c.id; L.name = c.name; curChar = c; markDirty(); renderCompbar(); renderLayers(); }));
+    var ps = document.createElement('select'); var o0 = document.createElement('option'); o0.value = ''; o0.textContent = 'No panel'; ps.appendChild(o0);
+    panelsList.forEach(function (p) { var o = document.createElement('option'); o.value = p.id; o.textContent = p.name; ps.appendChild(o); }); ps.value = L.panel || '';
+    ps.addEventListener('change', function () { L.panel = ps.value || null; activePanel = L.panel; markDirty(); renderPanels(); renderLayers(); }); field('Panel', ps);
+    var ds = document.createElement('textarea'); ds.value = L.desc || ''; ds.placeholder = 'Describe what you drew: who or what it is, pose, expression, clothing, where it is in the panel, camera angle…';
+    ds.addEventListener('input', function () { L.desc = ds.value; markDirty(); }); field('Description for Claude', ds);
+    var row = mk('div', 'acts'), so = bt('Show only this', 'btn ghost'), sa = bt('Show all', 'btn ghost'), dl = bt('Delete layer', 'btn danger');
+    so.onclick = function () { showOnly(L); }; sa.onclick = function () { showAllLayers(); };
+    dl.onclick = function () {
+      if (!dl.classList.contains('armed')) { dl.classList.add('armed'); dl.textContent = 'Tap again to delete'; setTimeout(function () { dl.classList.remove('armed'); dl.textContent = 'Delete layer'; }, 3500); return; }
+      deleteLayer(L);
+    };
+    row.append(so, sa, dl); box.appendChild(row);
+  }
+  try { if (localStorage.getItem('ml-dock') === '1') setDock(true); } catch (e) {}
+  renderCompbar();
 
   /* ---------- drawing input ---------- */
   var active = null, panning = null;
@@ -811,7 +1027,7 @@ dl.facts dd { margin: 0; }
       if (handleHit(pt(e))) active = { t: 'handle', id: e.pointerId, touch: e.pointerType === 'touch' }; else commitPending();
       return;
     }
-    var L = ensureLayer(), T = TOOLS[tool], s = sizeVal(), p = pt(e), clip = clipArg();
+    var L = tool === 'panel' ? null : targetLayer(), T = TOOLS[tool], s = sizeVal(), p = pt(e), clip = clipArg();
     var isTouch = e.pointerType === 'touch';
     if (tool === 'panel') active = { t: 'h', kind: 'rect', c: T.color, w: Math.max(3, s * 0.8), ls: 'solid', x0: p[0], y0: p[1], x1: p[0], y1: p[1], id: e.pointerId, isPanel: true };
     else if (tool === 'shape') active = { t: 'h', kind: shapeKind, c: shapeColor, w: Math.max(2, s), ls: lineStyle, x0: p[0], y0: p[1], x1: p[0], y1: p[1], id: e.pointerId, clip: clip };
@@ -851,9 +1067,12 @@ dl.facts dd { margin: 0; }
     if (op.t === 'h' && (op.kind === 'curve' || op.kind === 'carrow')) { startPending(op, L); return; }
     if (op.t === 'h') {
       var pn = null;
-      if (op.isPanel) { pn = addPanel(op); op.panelId = pn.id; delete op.isPanel; }
+      if (op.isPanel) {
+        pn = addPanel(op); op.panelId = pn.id; delete op.isPanel; dropEmptyDefault();
+        L = newLayer({ component: 'border', panel: pn.id, name: pn.name + ' border' }); layers.push(L); activeL = null; curComponent = curComponent === 'border' ? 'other' : curComponent;
+      }
       onLayer(L, function () { drawOp(op); }); addOp(L, op, pn); paint();
-      if (pn) { renderPanels(); setStatus(pn.name + ' added. Tap its tag to rename it or add notes.'); }
+      if (pn) { renderPanels(); renderLayers(); renderCompbar(); setStatus(pn.name + ' added. Tap its tag to rename it or add notes.'); }
       return;
     }
     addOp(L, op); paint();
@@ -961,11 +1180,11 @@ dl.facts dd { margin: 0; }
       if (!dirty || !db || !assets) return;
       dirty = false;
       var p = pages[cur], h = H, thumb, lys = layers.slice(), pans = JSON.parse(JSON.stringify(panelsList));
-      paint(); thumb = makeThumb();
+      paint(null, true); thumb = makeThumb();
       setStatus('Saving…');
       /* take every picture now, so what is uploaded is exactly what is on screen at this moment */
-      var snaps = lys.map(function (L) { return (L.asset && !L.dirty) ? null : { L: L, ver: L.ver, blob: blobOf(L.cv) }; });
-      var compBlob = blobOf(cv), oldAssets = docAssetsOf(p).slice(), seq = Promise.resolve();
+      var snaps = lys.map(function (L) { return ((L.asset && !L.dirty) || layerEmpty(L)) ? null : { L: L, ver: L.ver, blob: blobOf(L.cv) }; });
+      var compBlob = blobOf(cv), oldAssets = docAssetsOf(p).slice(), seq = Promise.resolve(); paint();
       snaps.forEach(function (s) {
         if (!s) return;
         seq = seq.then(function () { return s.blob; }).then(function (b) { if (!b) throw new Error('could not make image'); return assets.upload(b, 'png'); }).then(function (up) { s.path = up.id; });
@@ -973,7 +1192,7 @@ dl.facts dd { margin: 0; }
       return seq.then(function () { return compBlob; }).then(function (b) { if (!b) throw new Error('could not make image'); return assets.upload(b, 'png'); }).then(function (up) {
         var comp = up.id;
         snaps.forEach(function (s) { if (s && s.path) { s.L.asset = s.path; if (s.L.ver === s.ver) s.L.dirty = false; } });
-        var manifest = { v: 2, height: h, panels: pans, composite: comp, layers: lys.map(function (L) { return { id: L.id, panel: L.panel, component: L.component, ref: L.ref, name: L.name, desc: L.desc, visible: L.visible, flat: L.flat, asset: L.asset }; }) };
+        var manifest = { v: 2, height: h, panels: pans, composite: comp, layers: lys.map(function (L) { return { id: L.id, panel: L.panel, component: L.component, ref: L.ref, name: L.name, desc: L.desc, visible: true, flat: L.flat, asset: L.asset }; }) };
         return assets.upload(new Blob([JSON.stringify(manifest)], { type: 'application/json' }), 'json').then(function (mp) {
           p.assetId = mp.id; p.comp = comp; p.mani = manifest; p.height = h; p.updatedAt = new Date().toISOString(); p.thumb = thumb;
           p.docAssets = [mp.id, comp].concat(lys.map(function (L) { return L.asset; }).filter(Boolean));
@@ -1087,7 +1306,7 @@ dl.facts dd { margin: 0; }
     setCanvasHeight(p.height || DEFAULT_H);
     notesEl.value = p.notes || ''; renderThumbs(); updateButtons(); scroller.scrollTop = 0;
     if (autoFit) fit();
-    function ready() { ensureLayer(); paint(); renderPanels(); canDraw = true; updateButtons(); if (typeof renderLayers === 'function') renderLayers(); }
+    function ready() { ensureLayer(); paint(); renderPanels(); canDraw = true; updateButtons(); renderLayers(); renderCompbar(); }
     if (p.cache) {
       var c = p.cache; layers = c.layers; panelsList = c.panels; hist = c.hist; redoH = c.redoH; activePanel = c.activePanel;
       activeL = layers.filter(function (L) { return L.id === c.activeId; })[0] || null; if (c.h !== H) setCanvasHeight(c.h); ready(); return;
@@ -1145,7 +1364,7 @@ dl.facts dd { margin: 0; }
   function disarm() { clearTimeout(delTimer); delBtn.classList.remove('armed'); delBtn.textContent = 'Delete page'; }
 
   document.getElementById('dl').addEventListener('click', function () {
-    commitPending(); paint(); cv.toBlob(function (blob) {
+    commitPending(); paint(null, true); cv.toBlob(function (blob) { setTimeout(paint, 0);
       if (!blob) return;
       var a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = 'page-' + String(cur + 1).padStart(3, '0') + '.png';
       document.body.appendChild(a); a.click(); a.remove(); setTimeout(function () { URL.revokeObjectURL(a.href); }, 4000);
