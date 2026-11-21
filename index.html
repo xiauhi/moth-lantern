@@ -252,8 +252,8 @@ canvas { display: block; background: #fff; touch-action: none; box-shadow: 0 2px
 .doc textarea:focus, .doc input:focus { outline: 2px solid var(--accent); outline-offset: 1px; }
 .doc input[type=text], .doc input[type=search] { width: 100%; box-sizing: border-box; min-height: 44px; border: 1px solid var(--line); border-radius: 8px; padding: 0 12px; font: 16px var(--font-body); background: var(--bg); color: inherit; min-width: 0; }
 .sline { color: var(--muted); font-size: 14px; min-height: 1.2em; }
-.tools { display: grid; gap: 10px; }
-.tools input[type=search] { background: var(--panel); }
+.idea-tools { display: grid; gap: 10px; }
+.idea-tools input[type=search] { background: var(--panel); }
 .answer { display: grid; gap: 6px; background: color-mix(in srgb, var(--c) 8%, var(--bg)); border-radius: 8px; padding: 10px 14px; }
 .answer textarea { min-height: 70px; background: var(--panel); }
 .ans p { margin: 0 0 .5em; }
@@ -1925,7 +1925,7 @@ dl.facts dd { margin: 0; }
         load.then(function (t) {
           model = parseIdeas(t); ctx.status('');
           host.innerHTML = '<div class="doc ideapage"><section class="composer" aria-label="New idea"><label class="lbl" for="idea-text">New idea</label><textarea id="idea-text" placeholder="e.g. Write a scene, a line of dialogue, a rule of magic…"></textarea><div class="chips" id="topic-pick" role="group" aria-label="Topic"></div><div class="row2"><span class="hint">Ctrl + Enter to add</span><span class="sp"></span><button class="btn pri" id="add-btn" type="button">Add idea</button></div><div class="sline" role="status"></div></section>' +
-            '<section class="tools" aria-label="Find ideas"><input type="search" id="search" placeholder="Search ideas" aria-label="Search ideas"><div class="chips" id="filter" role="group" aria-label="Filter by topic"></div></section><section class="ideas" id="ideas-list" aria-live="polite"></section></div>';
+            '<section class="idea-tools" aria-label="Find ideas"><input type="search" id="search" placeholder="Search ideas" aria-label="Search ideas"><div class="chips" id="filter" role="group" aria-label="Filter by topic"></div></section><section class="ideas" id="ideas-list" aria-live="polite"></section></div>';
           composeEl = host.querySelector('.composer'); pickEl = host.querySelector('#topic-pick'); filterEl = host.querySelector('#filter'); listEl = host.querySelector('#ideas-list'); statusLine = host.querySelector('.sline');
           var ta = host.querySelector('#idea-text'), btn = host.querySelector('#add-btn'), s = host.querySelector('#search');
           ta.value = lsGet('ml-draft-' + pj, '') || ''; var dt; ta.addEventListener('input', function () { clearTimeout(dt); dt = setTimeout(function () { lsSet('ml-draft-' + pj, ta.value); }, 400); });
