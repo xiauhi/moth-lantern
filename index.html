@@ -2523,49 +2523,151 @@ dl.facts dd { margin: 0; }
     return gfetch(API + 'files?fields=id', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: fname, mimeType: FOLDER_MIME, parents: [root] }) })
       .then(function (r) { return r.json(); }).then(function (j) { folders.push({ id: j.id, name: fname }); return j.id; });
   }
+  function getManifest(p) {
+    if (p.mani) return Promise.resolve(p.mani);
+    if (!p.assetId || !/\.json$/i.test(p.assetId)) return Promise.resolve(null);
+    return assets.download(p.assetId).then(function (b) { return b.text(); }).then(function (tx) { var m = JSON.parse(tx); p.mani = m; p.comp = m.composite; return m; });
+  }
   function getComposite(p) {
     if (p.comp) return assets.download(p.comp);
-    if (/\.json$/i.test(p.assetId)) return assets.download(p.assetId).then(function (b) { return b.text(); }).then(function (tx) { var m = JSON.parse(tx); p.mani = m; p.comp = m.composite; return assets.download(m.composite); });
+    if (p.assetId && /\.json$/i.test(p.assetId)) return getManifest(p).then(function (m) { return assets.download(m.composite); });
     p.comp = p.assetId; return assets.download(p.assetId);
+  }
+  function blobImg(blob) { var u = URL.createObjectURL(blob); return loadImg(u).then(function (im) { return { im: im, u: u }; }); }
+  /* the area a layer actually covers (a tight box around the drawn pixels) */
+  function bboxOf(im, flat) {
+    var c = document.createElement('canvas'); c.width = im.naturalWidth || im.width; c.height = im.naturalHeight || im.height; var x = c.getContext('2d'); x.drawImage(im, 0, 0);
+    var d = x.getImageData(0, 0, c.width, c.height).data, minx = 1e9, miny = 1e9, maxx = -1, maxy = -1;
+    for (var y = 0; y < c.height; y++) for (var xx = 0; xx < c.width; xx++) {
+      var i = (y * c.width + xx) * 4, on = flat ? (d[i] < 225 || d[i + 1] < 225 || d[i + 2] < 225) && d[i + 3] > 16 : d[i + 3] > 16;
+      if (on) { if (xx < minx) minx = xx; if (xx > maxx) maxx = xx; if (y < miny) miny = y; if (y > maxy) maxy = y; }
+    }
+    return maxx < 0 ? null : { x: minx, y: miny, w: maxx - minx + 1, h: maxy - miny + 1 };
+  }
+  function placeWords(b, ref) {
+    var cx = (b.x + b.w / 2 - ref.x) / ref.w, cy = (b.y + b.h / 2 - ref.y) / ref.h;
+    var hx = cx < 0.34 ? 'left' : cx > 0.66 ? 'right' : 'centre', vy = cy < 0.34 ? 'top' : cy > 0.66 ? 'bottom' : 'middle';
+    var pc = function (v) { return Math.max(0, Math.min(100, Math.round(v * 100))); };
+    return hx + ', ' + vy + ' (spans x ' + pc((b.x - ref.x) / ref.w) + '–' + pc((b.x + b.w - ref.x) / ref.w) + '%, y ' + pc((b.y - ref.y) / ref.h) + '–' + pc((b.y + b.h - ref.y) / ref.h) + '%)';
+  }
+  function canvasBlob(c) { return new Promise(function (r) { c.toBlob(r, 'image/png'); }); }
+  function cropBlob(im, x, y, w, h) {
+    var c = document.createElement('canvas'); c.width = Math.max(1, Math.round(w)); c.height = Math.max(1, Math.round(h)); var cx = c.getContext('2d'); cx.fillStyle = '#fff'; cx.fillRect(0, 0, c.width, c.height); cx.drawImage(im, x, y, w, h, 0, 0, c.width, c.height); return canvasBlob(c);
+  }
+  /* a colour-coded picture: every layer filled with its component colour, panels outlined and named */
+  function mapBlob(items, mani) {
+    var h = mani.height || DEFAULT_H, c = document.createElement('canvas'); c.width = W; c.height = h; var x = c.getContext('2d'); x.fillStyle = '#fff'; x.fillRect(0, 0, W, h);
+    items.forEach(function (it) {
+      if (!it.im) return; var t = document.createElement('canvas'); t.width = W; t.height = h; var tx = t.getContext('2d'); tx.drawImage(it.im, 0, 0);
+      if (it.ml.flat) { x.globalCompositeOperation = 'multiply'; x.globalAlpha = 0.35; x.drawImage(t, 0, 0); x.globalCompositeOperation = 'source-over'; x.globalAlpha = 1; return; }
+      tx.globalCompositeOperation = 'source-in'; tx.fillStyle = compOf(it.ml.component).c; tx.fillRect(0, 0, W, h); x.globalAlpha = 0.92; x.drawImage(t, 0, 0); x.globalAlpha = 1;
+    });
+    (mani.panels || []).forEach(function (pn) { x.strokeStyle = '#2f64d6'; x.lineWidth = 3; x.setLineDash([12, 8]); x.strokeRect(pn.x, pn.y, pn.w, pn.h); x.setLineDash([]); x.font = '600 22px sans-serif'; x.fillStyle = '#2f64d6'; x.fillText(pn.name, pn.x + 8, pn.y + 26); });
+    return canvasBlob(c);
+  }
+  function pageDescription(p, pageNo, chapName, mani, items, panelFiles) {
+    var h = mani.height || DEFAULT_H, md = ['# Page ' + pageNo + ' · ' + p.id + ' (' + chapName + ')', '',
+      'Size ' + W + ' × ' + h + ' px. Layers are listed back to front: the first one in a group is furthest back, the last is in front. Positions are where the drawn lines are, inside the panel.', ''];
+    md.push('Files in this folder: `map.png` (every layer in its component colour, panels outlined), `layers/` (each layer alone on a transparent page, numbered back to front), `panels/` (the finished drawing cropped to each panel), `page.json` (the same facts for programs). The flat page is `../' + pad(pageNo, 3) + '_' + p.id + '.png`.', '');
+    md.push('Colour key for `map.png`: ' + COMPONENTS.map(function (c) { return c.n + ' ' + c.c; }).join(', ') + '.', '');
+    md.push('## Page notes', '', (p.notes || '').trim() || '(none)', '');
+    var groups = (mani.panels || []).map(function (pn) { return { pn: pn, id: pn.id }; }); groups.push({ pn: null, id: null });
+    groups.forEach(function (g) {
+      var its = items.filter(function (it) { return (it.ml.panel || null) === g.id; });
+      if (!g.pn && !its.length) return;
+      if (g.pn) {
+        md.push('## ' + g.pn.name, '', 'Panel box on the page: x ' + g.pn.x + ', y ' + g.pn.y + ', ' + g.pn.w + ' × ' + g.pn.h + ' px. Crop: `' + (panelFiles[g.pn.id] || '') + '`.', '', 'Panel notes: ' + ((g.pn.notes || '').trim() || '(none)'), '');
+      } else md.push('## Layers not in a panel', '');
+      if (its.length) md.push('Back to front: ' + its.map(function (it) { return it.ml.name || compOf(it.ml.component).n; }).join(' → '), '');
+      its.forEach(function (it) {
+        var ml = it.ml, line = '- **' + (ml.name || compOf(ml.component).n) + '** — ' + compOf(ml.component).n + (ml.ref ? ' (character id `' + ml.ref + '` in the Bible)' : '') + ' — `layers/' + it.fname + '`';
+        md.push(line);
+        if (it.bbox) md.push('  - Position: ' + placeWords(it.bbox, g.pn ? { x: g.pn.x, y: g.pn.y, w: g.pn.w, h: g.pn.h } : { x: 0, y: 0, w: W, h: h }));
+        else md.push('  - Nothing drawn on this layer yet.');
+        md.push('  - Description: ' + ((ml.desc || '').trim() || '(none)'));
+      });
+      md.push('');
+    });
+    return md.join('\n');
+  }
+  function mkFolder(parent, name) {
+    return gfetch(API + 'files?fields=id', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: name, mimeType: FOLDER_MIME, parents: [parent] }) }).then(function (r) { return r.json(); }).then(function (j) { return j.id; });
+  }
+  /* page folder: page.md, page.json, map.png, layers/, panels/ (rebuilt whenever the page changed) */
+  function exportDetail(p, cfid, base, ex, pageNo, chapName) {
+    return getManifest(p).then(function (mani) {
+      if (!mani) { if (ex) trashFile(ex.id).catch(function () {}); return null; }
+      var dfidP = ex ? (ex.name === base ? Promise.resolve(ex.id) : patchMeta(ex.id, { name: base }).then(function () { ex.name = base; return ex.id; })) : mkFolder(cfid, base);
+      return dfidP.then(function (dfid) {
+        return Promise.all([listFiles(dfid), listChildFolders(dfid)]).then(function (a) {
+          return Promise.all(a[0].concat(a[1]).map(function (f) { return trashFile(f.id).catch(function () {}); }));
+        }).then(function () { return Promise.all([mkFolder(dfid, 'layers'), mkFolder(dfid, 'panels')]); }).then(function (fs) {
+          var lfid = fs[0], pfid = fs[1], urls = [];
+          var items = (mani.layers || []).map(function (ml, i) { return { ml: ml, fname: pad(i + 1, 2) + '_' + ml.component + '_' + (slug(ml.name) || 'layer') + '.png' }; });
+          return Promise.all(items.map(function (it) {
+            if (!it.ml.asset) return null;
+            return assets.download(it.ml.asset).then(function (blob) { it.blob = blob; return blobImg(blob); }).then(function (r) { it.im = r.im; urls.push(r.u); it.bbox = bboxOf(r.im, it.ml.flat); });
+          })).then(function () { return getComposite(p); }).then(blobImg).then(function (cr) {
+            urls.push(cr.u); var seq = Promise.resolve(), panelFiles = {};
+            items.forEach(function (it) { if (it.blob) seq = seq.then(function () { return createFile(lfid, it.fname, 'image/png', it.blob); }); });
+            (mani.panels || []).forEach(function (pn, i) {
+              var fname = (i + 1) + '_' + (slug(pn.name) || 'panel') + '.png'; panelFiles[pn.id] = 'panels/' + fname;
+              seq = seq.then(function () { return cropBlob(cr.im, pn.x, pn.y, pn.w, pn.h); }).then(function (b) { return createFile(pfid, fname, 'image/png', b); });
+            });
+            seq = seq.then(function () { return mapBlob(items, mani); }).then(function (b) { return createFile(dfid, 'map.png', 'image/png', b); });
+            seq = seq.then(function () { return createFile(dfid, 'page.md', 'text/markdown', pageDescription(p, pageNo, chapName, mani, items, panelFiles)); });
+            seq = seq.then(function () {
+              var json = { page: { id: p.id, number: pageNo, chapter: chapName, width: W, height: mani.height || DEFAULT_H, notes: p.notes || '' },
+                panels: (mani.panels || []).map(function (pn) { return { id: pn.id, name: pn.name, x: pn.x, y: pn.y, w: pn.w, h: pn.h, notes: pn.notes || '', crop: panelFiles[pn.id] || null }; }),
+                layers: items.map(function (it, i) { return { order: i + 1, name: it.ml.name, component: it.ml.component, character: it.ml.ref || null, panel: it.ml.panel || null, description: it.ml.desc || '', file: it.blob ? 'layers/' + it.fname : null, bbox: it.bbox || null }; }) };
+              return createFile(dfid, 'page.json', 'application/json', JSON.stringify(json, null, 1));
+            });
+            return seq.then(function () { urls.forEach(function (u) { URL.revokeObjectURL(u); }); return mani; });
+          });
+        });
+      });
+    });
   }
   function exportSketches(manual) {
     if (exporting || !db || !assets || !gHave() || !proj) return Promise.resolve(false);
     exporting = true; var pj = proj, done = 0, m = getMeta(pj);
     var chapters = m.list.map(function (n) { return { n: n, pages: pagesOfChapter(pj, n) }; });
     function say(t) { if (manual) setStatus(t); }
-    say('Exporting pages to Drive…');
+    say('Saving chapter to Drive…');
     return folderPath([DRIVE_ROOT, pj, 'sketches']).then(function (root) {
       return Promise.all([listFiles(root), listChildFolders(root)]).then(function (a) {
-        var rootFiles = a[0], folders = a[1], st = {}, byId = {}, all = rootFiles.map(function (f) { f._folder = root; return f; });
-        return Promise.all(folders.map(function (fo) { return listFiles(fo.id).then(function (fs) { fs.forEach(function (f) { f._folder = fo.id; }); return fs; }); })).then(function (lists) {
+        var rootFiles = a[0], folders = a[1], st = {}, byId = {}, detById = {}, all = rootFiles.map(function (f) { f._folder = root; return f; });
+        return Promise.all(folders.map(function (fo) { return Promise.all([listFiles(fo.id), listChildFolders(fo.id)]).then(function (r) {
+          r[0].forEach(function (f) { f._folder = fo.id; }); r[1].forEach(function (f) { f._folder = fo.id; var dm = /^(?:\d+_)?(.+)$/.exec(f.name); if (dm) detById[dm[1]] = f; }); return r[0]; }); })).then(function (lists) {
           lists.forEach(function (l) { all = all.concat(l); });
           all.forEach(function (f) { var mm = /^(?:\d+_)?(.+)\.png$/.exec(f.name); if (mm) byId[mm[1]] = f; });
           var stFile = rootFiles.filter(function (f) { return f.name === '_state.json'; })[0], mdFile = rootFiles.filter(function (f) { return f.name === 'pages.md'; })[0];
           var loadSt = stFile ? readDoc(stFile).then(function (t) { try { st = JSON.parse(t) || {}; } catch (e) { st = {}; } }) : Promise.resolve();
           return loadSt.then(function () {
-            var seq = Promise.resolve(), md = ['# ' + projOf(pj).name + ': sketchbook pages', '', 'Copied from the moth-lantern sketchbook on ' + new Date().toISOString().slice(0, 16).replace('T', ' ') + ' UTC. One folder per chapter; files are numbered in story order (001_..., 002_...). This is a read-only copy: the real pages live in the app.'];
+            var seq = Promise.resolve(), infos = [];
             chapters.forEach(function (c) {
-              var fname = 'Chapter ' + pad(c.n, 2) + (m.names[c.n] ? ' - ' + safeName(m.names[c.n]) : '');
-              md.push('', '## ' + fname + ' (' + c.pages.length + (c.pages.length === 1 ? ' page)' : ' pages)'), '');
+              var fname = 'Chapter ' + pad(c.n, 2) + (m.names[c.n] ? ' - ' + safeName(m.names[c.n]) : ''), ci = { fname: fname, pages: [] }; infos.push(ci);
               seq = seq.then(function () { return chapterFolder(root, folders, c.n, fname); }).then(function (fid) {
                 var s2 = Promise.resolve();
                 c.pages.forEach(function (p, i) {
-                  var want = pad(i + 1, 3) + '_' + p.id + '.png', old = byId[p.id];
-                  md.push('### Page ' + (i + 1) + ' · ' + (p.assetId ? want : 'blank, not exported'), '', (p.notes || '').trim() || '(no notes)', '');
+                  var base = pad(i + 1, 3) + '_' + p.id, want = base + '.png', old = byId[p.id], dold = detById[p.id], pi = { i: i, p: p, base: base, want: want, mani: null };
+                  ci.pages.push(pi);
                   if (!p.assetId) return;
                   s2 = s2.then(function () {
-                    var need = !old || st[p.id] !== p.assetId;
-                    var step = need ? getComposite(p).then(function (blob) {
+                    var wantsDet = /\.json$/i.test(p.assetId), needPng = !old || st[p.id] !== p.assetId, needDet = wantsDet && (needPng || !dold);
+                    var step = needPng ? getComposite(p).then(function (blob) {
                       if (old) return patchFile(old, blob, 'image/png');
                       return createFile(fid, want, 'image/png', blob).then(function (nf) { nf._folder = fid; old = nf; byId[p.id] = nf; });
                     }) : Promise.resolve();
                     return step.then(function () {
-                      if (need) { st[p.id] = p.assetId; done++; say('Exporting… ' + done); }
                       if (old.name !== want || old._folder !== fid) {
                         var qs = old._folder !== fid ? '&addParents=' + fid + '&removeParents=' + old._folder : '';
                         return patchMeta(old.id, { name: want }, qs).then(function () { old.name = want; old._folder = fid; });
                       }
-                    });
+                    }).then(function () {
+                      if (needDet) { say('Saving page ' + (i + 1) + ' details…'); return exportDetail(p, fid, base, dold, i + 1, fname).then(function (mani) { pi.mani = mani; }); }
+                      if (dold && dold.name !== base) return patchMeta(dold.id, { name: base }).then(function () { dold.name = base; });
+                    }).then(function () { if (needPng || needDet) { st[p.id] = p.assetId; done++; say('Saving chapter… ' + done); } });
                   });
                 });
                 return s2;
@@ -2573,7 +2675,16 @@ dl.facts dd { margin: 0; }
             });
             return seq.then(function () {
               var keep = {}; allPages.forEach(function (p) { if (inProject(pj, p.id)) keep[p.id] = 1; });
-              Object.keys(st).forEach(function (id) { if (!keep[id]) { delete st[id]; if (byId[id]) trashFile(byId[id].id).catch(function () {}); } });
+              Object.keys(st).forEach(function (id) { if (!keep[id]) { delete st[id]; if (byId[id]) trashFile(byId[id].id).catch(function () {}); if (detById[id]) trashFile(detById[id].id).catch(function () {}); } });
+              var md = ['# ' + projOf(pj).name + ': sketchbook pages', '', 'Copied from the moth-lantern sketchbook on ' + new Date().toISOString().slice(0, 16).replace('T', ' ') + ' UTC. One folder per chapter; files are numbered in story order (001_..., 002_...). This is a read-only copy: the real pages live in the app.',
+                '', 'Each page is a flat picture `NNN_<id>.png`. A page that has panels or layers also has a folder with the same name: `page.md` says what is drawn panel by panel, back to front, with the artist’s descriptions; `layers/` has every layer alone; `panels/` has a crop per panel; `map.png` colours every layer by component.'];
+              infos.forEach(function (ci) {
+                md.push('', '## ' + ci.fname + ' (' + ci.pages.length + (ci.pages.length === 1 ? ' page)' : ' pages)'), '');
+                ci.pages.forEach(function (pi) {
+                  var mn = pi.mani || pi.p.mani, extra = mn ? ' · ' + (mn.panels || []).length + ((mn.panels || []).length === 1 ? ' panel, ' : ' panels, ') + (mn.layers || []).length + ((mn.layers || []).length === 1 ? ' layer' : ' layers') + ' · details: `' + pi.base + '/page.md`' : '';
+                  md.push('### Page ' + (pi.i + 1) + ' · ' + (pi.p.assetId ? pi.want : 'blank, not exported') + extra, '', (pi.p.notes || '').trim() || '(no notes)', '');
+                });
+              });
               function put(name, ex, body, mime) { return ex ? patchFile(ex, body, mime) : createFile(root, name, mime, body); }
               return put('pages.md', mdFile, md.join('\n'), 'text/markdown').then(function () { return put('_state.json', stFile, JSON.stringify(st), 'application/json'); });
             });
@@ -2581,7 +2692,7 @@ dl.facts dd { margin: 0; }
         });
       });
     }).then(function () { exporting = false; say(done ? 'Chapter saved: ' + done + ' page' + (done === 1 ? '' : 's') + ' copied to Drive.' : 'Chapter saved. The Drive copy is up to date.'); return true; })
-      .catch(function (e) { exporting = false; say('Export failed (' + String(e && e.message || e).slice(0, 40) + ').'); return false; });
+      .catch(function (e) { exporting = false; say('Saving to Drive failed (' + String(e && e.message || e).slice(0, 40) + ').'); return false; });
   }
 
   /* ---------- look at what has already been copied to Drive, chapter by chapter ---------- */
