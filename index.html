@@ -528,7 +528,7 @@ dl.facts dd { margin: 0; }
   }
   /* shapes: polygons are inscribed in the dragged box (so ellipse-like boxes squash them) */
   var SHAPES = [
-    { k: 'line', n: 'Line' }, { k: 'arrow', n: 'Arrow' },
+    { k: 'line', n: 'Line' }, { k: 'arrow', n: 'Arrow' }, { k: 'curve', n: 'Curve' }, { k: 'carrow', n: 'Curved arrow' },
     { k: 'rect', n: 'Rectangle' }, { k: 'square', n: 'Square' },
     { k: 'ellipse', n: 'Ellipse' }, { k: 'circle', n: 'Circle' },
     { k: 'tri', n: 'Triangle', sides: 3, rot: -90 }, { k: 'diamond', n: 'Diamond', sides: 4, rot: -90 },
@@ -550,7 +550,16 @@ dl.facts dd { margin: 0; }
     var cx = (l + r) / 2, cy = (t + b) / 2, rx = (r - l) / 2, ry = (b - t) / 2, d = shapeDef(op.kind);
     ctx.save(); ctx.strokeStyle = op.c; ctx.lineWidth = op.w; ctx.lineJoin = 'round'; ctx.lineCap = 'round';
     ctx.setLineDash(dashFor(op.ls, op.w)); ctx.beginPath();
-    if (op.kind === 'line' || op.kind === 'arrow') {
+    if (op.kind === 'curve' || op.kind === 'carrow') {
+      var qx = op.cx != null ? op.cx : (op.x0 + op.x1) / 2, qy = op.cy != null ? op.cy : (op.y0 + op.y1) / 2;
+      ctx.moveTo(op.x0, op.y0); ctx.quadraticCurveTo(qx, qy, op.x1, op.y1); ctx.stroke();
+      if (op.kind === 'carrow') {
+        ctx.setLineDash([]); var ang2 = Math.atan2(op.y1 - qy, op.x1 - qx), hl2 = Math.max(16, op.w * 4.5);
+        ctx.beginPath();
+        ctx.moveTo(op.x1 - hl2 * Math.cos(ang2 - 0.45), op.y1 - hl2 * Math.sin(ang2 - 0.45)); ctx.lineTo(op.x1, op.y1);
+        ctx.lineTo(op.x1 - hl2 * Math.cos(ang2 + 0.45), op.y1 - hl2 * Math.sin(ang2 + 0.45)); ctx.stroke();
+      }
+    } else if (op.kind === 'line' || op.kind === 'arrow') {
       ctx.moveTo(op.x0, op.y0); ctx.lineTo(op.x1, op.y1); ctx.stroke();
       if (op.kind === 'arrow') {
         ctx.setLineDash([]); var ang = Math.atan2(op.y1 - op.y0, op.x1 - op.x0), hl = Math.max(16, op.w * 4.5);
@@ -571,6 +580,8 @@ dl.facts dd { margin: 0; }
     var d = shapeDef(k), s = '';
     if (k === 'line') s = '<path d="M4 20 L20 4"/>';
     else if (k === 'arrow') s = '<path d="M4 20 L20 4 M11 4 H20 V13"/>';
+    else if (k === 'curve') s = '<path d="M3 19 Q12 -3 21 19"/>';
+    else if (k === 'carrow') s = '<path d="M3 19 Q12 -3 21 19 M15.5 17 L21 19 L21.5 13"/>';
     else if (k === 'rect') s = '<rect x="3" y="6" width="18" height="12"/>';
     else if (k === 'square') s = '<rect x="5" y="5" width="14" height="14"/>';
     else if (k === 'ellipse') s = '<ellipse cx="12" cy="12" rx="9" ry="6"/>';
@@ -588,9 +599,32 @@ dl.facts dd { margin: 0; }
     whiten(); if (base && useBase) ctx.drawImage(base, 0, 0);
     for (i = s; i < ops.length; i++) drawOp(ops[i]);
     if (extra) drawOp(extra);
+    if (pending) { drawOp(pending.op); drawHandle(); }
+  }
+  /* curve tool: the curve waits for a bend. The dot sits on the middle of the curve; drag it, then tap elsewhere to finish. */
+  var pending = null;
+  function handlePt(o) { return [0.25 * o.x0 + 0.5 * o.cx + 0.25 * o.x1, 0.25 * o.y0 + 0.5 * o.cy + 0.25 * o.y1]; }
+  function drawHandle() {
+    var o = pending.op, m = handlePt(o), r = cv.getBoundingClientRect(), sc = W / r.width;
+    ctx.save(); ctx.beginPath(); ctx.arc(m[0], m[1], 15 * sc, 0, 6.2832); ctx.fillStyle = 'rgba(47,100,214,.18)'; ctx.fill();
+    ctx.beginPath(); ctx.arc(m[0], m[1], 9 * sc, 0, 6.2832); ctx.fillStyle = '#2f64d6'; ctx.fill(); ctx.lineWidth = 2.5 * sc; ctx.strokeStyle = '#fff'; ctx.stroke(); ctx.restore();
+  }
+  function startPending(op) {
+    var dx = op.x1 - op.x0, dy = op.y1 - op.y0, len = Math.sqrt(dx * dx + dy * dy) || 1;
+    op.cx = (op.x0 + op.x1) / 2 + 2 * (-dy / len) * len * 0.2; op.cy = (op.y0 + op.y1) / 2 + 2 * (dx / len) * len * 0.2;
+    pending = { op: op }; redraw(); updateButtons(); setStatus('Drag the dot to bend the curve. Tap elsewhere to finish.');
+  }
+  function commitPending() {
+    if (!pending) return; var op = pending.op; pending = null;
+    ops.push(op); redoStack = []; redraw(); updateButtons(); markDirty();
+  }
+  function cancelPending() { if (!pending) return; pending = null; redraw(); updateButtons(); setStatus(dirty ? 'Unsaved' : 'Saved'); }
+  function handleHit(p) {
+    var m = handlePt(pending.op), r = cv.getBoundingClientRect(), k = r.width / W;
+    return Math.sqrt(Math.pow((p[0] - m[0]) * k, 2) + Math.pow((p[1] - m[1]) * k, 2)) < 36;
   }
   function updateButtons() {
-    document.getElementById('undo').disabled = !ops.length || !canDraw;
+    document.getElementById('undo').disabled = (!ops.length && !pending) || !canDraw;
     document.getElementById('redo').disabled = !redoStack.length || !canDraw;
     document.getElementById('extend').disabled = !canDraw || H + EXTEND > MAX_H;
     var d = pages.length ? pages[cur] : null;
@@ -613,6 +647,11 @@ dl.facts dd { margin: 0; }
     }
     if (!canDraw || active || (e.pointerType === 'mouse' && e.button !== 0)) return;
     e.preventDefault(); cv.setPointerCapture(e.pointerId);
+    if (pending) {
+      /* a curve is waiting for its bend: grab the dot, or finish the curve with a tap elsewhere */
+      if (handleHit(pt(e))) active = { t: 'handle', id: e.pointerId, touch: e.pointerType === 'touch' }; else commitPending();
+      return;
+    }
     var T = TOOLS[tool], s = sizeVal(), p = pt(e);
     var isTouch = e.pointerType === 'touch';
     if (tool === 'panel') active = { t: 'h', kind: 'rect', c: T.color, w: Math.max(3, s * 0.8), ls: 'solid', x0: p[0], y0: p[1], x1: p[0], y1: p[1], id: e.pointerId };
@@ -627,6 +666,10 @@ dl.facts dd { margin: 0; }
     }
     if (!active || e.pointerId !== active.id) return;
     e.preventDefault();
+    if (active.t === 'handle') {
+      var hp = pt(e), o = pending.op;
+      o.cx = 2 * hp[0] - 0.5 * (o.x0 + o.x1); o.cy = 2 * hp[1] - 0.5 * (o.y0 + o.y1); redraw(); return;
+    }
     if (active.t === 'h') {
       var p = pt(e), dx = p[0] - active.x0, dy = p[1] - active.y0;
       if (active.kind === 'square' || active.kind === 'circle') {
@@ -644,7 +687,9 @@ dl.facts dd { margin: 0; }
     if (panning && e.pointerId === panning.id) { panning = null; return; }
     if (!active || e.pointerId !== active.id) return;
     var op = active; active = null;
+    if (op.t === 'handle') return;
     if (op.t === 'h' && Math.abs(op.x1 - op.x0) < 4 && Math.abs(op.y1 - op.y0) < 4) { redraw(); return; }
+    if (op.t === 'h' && (op.kind === 'curve' || op.kind === 'carrow')) { startPending(op); return; }
     ops.push(op); redoStack = []; updateButtons(); markDirty();
   }
   cv.addEventListener('pointerup', endPtr);
@@ -654,7 +699,7 @@ dl.facts dd { margin: 0; }
   /* ---------- toolbar ---------- */
   var shapeKind = 'rect', shapeColor = '#17181c', lineStyle = 'solid';
   function selectTool(t) {
-    tool = t;
+    commitPending(); tool = t;
     document.querySelectorAll('[data-tool]').forEach(function (b) { b.classList.toggle('on', b.dataset.tool === t); });
     document.getElementById('shapebar').hidden = t !== 'shape';
   }
@@ -664,7 +709,7 @@ dl.facts dd { margin: 0; }
       var b = document.createElement('button'); b.type = 'button'; b.className = 'btn' + (d.k === shapeKind ? ' on' : '');
       b.dataset.shape = d.k; b.title = d.n; b.setAttribute('aria-label', d.n); b.innerHTML = shapeIcon(d.k);
       b.addEventListener('click', function () {
-        shapeKind = d.k;
+        commitPending(); shapeKind = d.k;
         box.querySelectorAll('button').forEach(function (x) { x.classList.toggle('on', x === b); });
       });
       box.appendChild(b);
@@ -682,8 +727,8 @@ dl.facts dd { margin: 0; }
   })();
   document.querySelectorAll('[data-tool]').forEach(function (b) { b.addEventListener('click', function () { selectTool(b.dataset.tool); }); });
   selectTool('pen');
-  document.getElementById('undo').addEventListener('click', function () { if (!ops.length) return; redoStack.push(ops.pop()); redraw(); updateButtons(); markDirty(); });
-  document.getElementById('redo').addEventListener('click', function () { if (!redoStack.length) return; ops.push(redoStack.pop()); redraw(); updateButtons(); markDirty(); });
+  document.getElementById('undo').addEventListener('click', function () { if (pending) { cancelPending(); return; } if (!ops.length) return; redoStack.push(ops.pop()); redraw(); updateButtons(); markDirty(); });
+  document.getElementById('redo').addEventListener('click', function () { if (pending || !redoStack.length) return; ops.push(redoStack.pop()); redraw(); updateButtons(); markDirty(); });
   document.addEventListener('keydown', function (e) {
     if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z' && document.activeElement !== notesEl) { e.preventDefault(); document.getElementById(e.shiftKey ? 'redo' : 'undo').click(); }
   });
@@ -694,7 +739,7 @@ dl.facts dd { margin: 0; }
     if (!cleanBtn.classList.contains('armed')) {
       cleanBtn.classList.add('armed'); cleanBtn.textContent = 'Tap again to clean'; cleanTimer = setTimeout(disarmClean, 3500); return;
     }
-    disarmClean(); ops.push({ t: 'c' }); redoStack = []; redraw(); updateButtons(); markDirty();
+    disarmClean(); commitPending(); ops.push({ t: 'c' }); redoStack = []; redraw(); updateButtons(); markDirty();
     setStatus('Page cleaned. Undo brings it back.');
   });
   document.getElementById('zin').addEventListener('click', function () { autoFit = false; zoom = Math.min(2.5, zoom * 1.25); applyZoom(); });
@@ -703,7 +748,7 @@ dl.facts dd { margin: 0; }
   window.addEventListener('resize', function () { if (autoFit) fit(); });
   document.getElementById('extend').addEventListener('click', function () {
     if (!canDraw || H + EXTEND > MAX_H) return;
-    setCanvasHeight(H + EXTEND); redraw(); updateButtons(); markDirty();
+    commitPending(); setCanvasHeight(H + EXTEND); redraw(); updateButtons(); markDirty();
     scroller.scrollTop = scroller.scrollHeight;
   });
   var fingerBtn = document.getElementById('finger');
@@ -743,7 +788,7 @@ dl.facts dd { margin: 0; }
     t.getContext('2d').drawImage(cv, 0, 0, t.width, t.height); return t.toDataURL('image/jpeg', 0.6);
   }
   function flush() {
-    clearTimeout(saveTimer);
+    commitPending(); clearTimeout(saveTimer);
     return queue(function () {
       if (!dirty || !db || !assets) return;
       dirty = false;
@@ -811,7 +856,7 @@ dl.facts dd { margin: 0; }
   }
   function showPage(i, token) {
     {
-      cur = i; var p = pages[i];
+      cur = i; var p = pages[i]; pending = null;
       ops = []; redoStack = []; base = null; canDraw = false; dirty = false;
       setCanvasHeight(p.height || DEFAULT_H); whiten();
       notesEl.value = p.notes || ''; renderThumbs(); updateButtons(); scroller.scrollTop = 0;
@@ -862,7 +907,7 @@ dl.facts dd { margin: 0; }
       delTimer = setTimeout(disarm, 3500); return;
     }
     disarm();
-    var p = pages[cur]; clearTimeout(saveTimer); dirty = false;
+    pending = null; var p = pages[cur]; clearTimeout(saveTimer); dirty = false;
     queue(function () {
       var jobs = [];
       if (db) jobs.push(db.doc('pages/' + p.id).delete());
@@ -876,7 +921,7 @@ dl.facts dd { margin: 0; }
   function disarm() { clearTimeout(delTimer); delBtn.classList.remove('armed'); delBtn.textContent = 'Delete page'; }
 
   document.getElementById('dl').addEventListener('click', function () {
-    cv.toBlob(function (blob) {
+    commitPending(); cv.toBlob(function (blob) {
       if (!blob) return;
       var a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = 'page-' + String(cur + 1).padStart(3, '0') + '.png';
       document.body.appendChild(a); a.click(); a.remove(); setTimeout(function () { URL.revokeObjectURL(a.href); }, 4000);
