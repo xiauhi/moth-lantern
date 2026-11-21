@@ -182,6 +182,16 @@ dl.facts dd { margin: 0; }
 .thumb[aria-current="true"] { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent); }
 .thumb .tn { position: absolute; left: 4px; bottom: 4px; min-width: 22px; padding: 1px 6px; border-radius: 10px; background: rgba(20,22,26,.78); color: #fff; font-size: 12px; font-weight: 600; text-align: center; font-variant-numeric: tabular-nums; }
 .addpage { flex: none; min-height: 44px; justify-content: center; border-style: dashed; }
+.pnlayer { position: absolute; inset: 0; pointer-events: none; }
+.pnl { position: absolute; box-sizing: border-box; }
+.pnl.on { outline: 2px solid #2f64d6; outline-offset: -1px; background: rgba(47, 100, 214, .06); }
+.pnl-tag { position: absolute; left: 6px; top: 6px; pointer-events: auto; min-height: 30px; padding: 0 11px; border-radius: 15px; font-size: 12px; font-weight: 600; border: 1px solid rgba(255,255,255,.5); background: rgba(20,22,26,.78); color: #fff; cursor: pointer; }
+.pnl.on .pnl-tag { background: #2f64d6; }
+.pcard { display: grid; gap: 8px; padding: 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--bg); }
+.pcard.on { border-color: var(--accent); }
+.pcard input, .pcard textarea { width: 100%; box-sizing: border-box; border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; background: var(--panel); color: inherit; font: inherit; font-size: 16px; }
+.pcard textarea { min-height: 70px; resize: vertical; }
+.pcard .acts { display: flex; gap: 8px; flex-wrap: wrap; }
 .cvwrap { position: relative; width: max-content; }
 .guide { position: absolute; inset: 50px; border: 1.5px dashed rgba(70, 95, 150, .5); pointer-events: none; box-sizing: border-box; }
 .guide[hidden] { display: none; }
@@ -454,7 +464,7 @@ dl.facts dd { margin: 0; }
     <div class="actions">
       <button class="btn" id="undo" type="button" disabled>↩ Undo</button>
       <button class="btn" id="redo" type="button" disabled>Redo ↪</button>
-      <button class="btn danger" id="clean" type="button">Clean page</button>
+      <button class="btn danger" id="clean" type="button">Clean layer</button>
       <button class="btn" id="dl" type="button">Save PNG</button>
       <button class="btn danger" id="del" type="button">Delete page</button>
     </div>
@@ -477,6 +487,8 @@ dl.facts dd { margin: 0; }
       <button class="btn" id="zin" type="button" aria-label="Zoom in">+</button>
       <button class="btn" id="extend" type="button">Page +400 px</button>
       <button class="btn" id="finger" type="button" aria-pressed="false">Hand: scroll</button>
+      <button class="btn" id="panelsbtn" type="button" title="Names and notes for the panels on this page">Panels</button>
+      <button class="btn" id="clipbtn" type="button" aria-pressed="false" title="When on, your pen only draws inside the selected panel">Clip to panel</button>
       <button class="btn" id="guidebtn" type="button" aria-pressed="true" title="Faint dashed margin line. It is only a guide: it is not saved into the page, and you can draw past it.">Guide</button>    </div>
     <div class="shapebar" id="shapebar" hidden>
       <div class="grp" id="shapes" role="group" aria-label="Shape"></div>
@@ -495,7 +507,7 @@ dl.facts dd { margin: 0; }
     <div class="scroller" id="scroller">
       <div class="sheet">
         <p class="pagelabel" id="pagelabel"></p>
-        <div class="cvwrap"><canvas id="cv" width="800" height="1600"></canvas><div class="guide" id="guide" aria-hidden="true"></div></div>
+        <div class="cvwrap"><canvas id="cv" width="800" height="1600"></canvas><div class="guide" id="guide" aria-hidden="true"></div><div class="pnlayer" id="pnlayer"></div></div>
       </div>
     </div>
     <div class="notes">
@@ -549,14 +561,17 @@ dl.facts dd { margin: 0; }
   }
   function chapterName(k, n, m) { m = m || getMeta(k); return 'Chapter ' + n + (m.names[n] ? ' · ' + m.names[n] : ''); }
   function projOf(k) { for (var i = 0; i < PROJECTS.length; i++) if (PROJECTS[i].k === k) return PROJECTS[i]; return null; }
-  var base = null, ops = [], redoStack = [];
-  var tool = 'pen', fingerPans = false, canDraw = false, zoom = 1, autoFit = true;
+  /* ---------- a page is a small document: panels + layers (back to front). Each layer is its own transparent canvas. ---------- */
+  var MAX_LAYERS = 12;
+  var mctx = ctx;
+  var layers = [], panelsList = [], activeL = null, activePanel = null, hist = [], redoH = [], lidSeq = 0, pidSeq = 0, pending = null;
+  var tool = 'pen', fingerPans = false, canDraw = false, zoom = 1, autoFit = true, clipOn = false;
   var dirty = false, saveTimer = null, notesTimer = null, chain = Promise.resolve(), openToken = 0;
   var TOOLS = {
     pen:    { color: '#17181c', mul: 1,   press: true },
     blue:   { color: '#4f86f7', mul: 1.3, press: true },
     red:    { color: '#e0443e', mul: 1,   press: true },
-    eraser: { color: '#ffffff', mul: 4,   press: false },
+    eraser: { color: '#ffffff', mul: 4,   press: false, erase: true },
     panel:  { color: '#17181c', mul: 1,   press: false }
   };
 
@@ -564,19 +579,53 @@ dl.facts dd { margin: 0; }
   function clock() { return new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }); }
   function sizeVal() { return +document.getElementById('size').value; }
 
-  /* ---------- canvas ---------- */
-  function setCanvasHeight(h) { H = h; cv.width = W; cv.height = h; applyZoom(); }
-  function applyZoom() { cv.style.width = Math.round(W * zoom) + 'px'; cv.style.height = Math.round(H * zoom) + 'px'; if (typeof applyGuide === 'function') applyGuide(); }
+  /* ---------- canvases ---------- */
+  function mkCanvas(h) { var c = document.createElement('canvas'); c.width = W; c.height = h || H; return c; }
+  function newLayer(o) {
+    o = o || {};
+    var L = { id: o.id || 'ly' + (++lidSeq), panel: o.panel || null, component: o.component || 'other', ref: o.ref || '', name: o.name || '', desc: o.desc || '', visible: o.visible !== false,
+      asset: o.asset || null, flat: !!o.flat, base: o.base || null, ops: [], dirty: !!o.dirty, ver: 0 };
+    L.cv = mkCanvas(); L.cx = L.cv.getContext('2d'); return L;
+  }
+  function setCanvasHeight(h) {
+    H = h; cv.width = W; cv.height = h;
+    layers.forEach(function (L) { if (L.cv.height !== h) { var nc = mkCanvas(h); nc.getContext('2d').drawImage(L.cv, 0, 0); L.cv = nc; L.cx = nc.getContext('2d'); } });
+    applyZoom();
+  }
+  function applyZoom() { cv.style.width = Math.round(W * zoom) + 'px'; cv.style.height = Math.round(H * zoom) + 'px'; if (typeof applyGuide === 'function') applyGuide(); if (typeof renderPanels === 'function') renderPanels(); }
   function fit() { zoom = Math.max(0.3, Math.min(2, (scroller.clientWidth - 32) / W)); applyZoom(); }
-  function whiten() { ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, W, H); }
+  function onLayer(L, fn) { var keep = ctx; ctx = L.cx; try { fn(); } finally { ctx = keep; } }
+  function redrawLayer(L) {
+    onLayer(L, function () {
+      ctx.clearRect(0, 0, L.cv.width, L.cv.height);
+      var s = 0, useBase = true, i;
+      for (i = 0; i < L.ops.length; i++) if (L.ops[i].t === 'c') { s = i + 1; useBase = false; }
+      if (L.base && useBase) ctx.drawImage(L.base, 0, 0);
+      for (i = s; i < L.ops.length; i++) drawOp(L.ops[i]);
+    });
+  }
+  /* put every visible layer on the screen canvas (the old flat pictures use "multiply" so their white paper does not hide the layers below) */
+  function paint(extra) {
+    ctx = mctx; ctx.globalCompositeOperation = 'source-over'; ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, W, H);
+    layers.forEach(function (L) { if (!L.visible) return; ctx.globalCompositeOperation = L.flat ? 'multiply' : 'source-over'; ctx.drawImage(L.cv, 0, 0); });
+    ctx.globalCompositeOperation = 'source-over';
+    if (extra) drawOp(extra);
+    if (pending) { drawOp(pending.op); drawHandle(); }
+  }
+  var paintQ = 0;
+  function schedulePaint() { if (paintQ) return; paintQ = requestAnimationFrame(function () { paintQ = 0; paint(); }); }
+  function applyClip(op) { if (op.clip) { ctx.beginPath(); ctx.rect(op.clip[0], op.clip[1], op.clip[2], op.clip[3]); ctx.clip(); } }
   function drawStroke(op, from) {
-    var p = op.pts; ctx.lineCap = 'round'; ctx.lineJoin = 'round'; ctx.strokeStyle = op.c; ctx.fillStyle = op.c;
-    if (p.length === 1) { var w0 = op.press ? op.w * (0.3 + p[0][2] * 1.1) : op.w; ctx.beginPath(); ctx.arc(p[0][0], p[0][1], w0 / 2, 0, 6.2832); ctx.fill(); return; }
+    var p = op.pts; ctx.save(); applyClip(op);
+    if (op.erase) { ctx.globalCompositeOperation = 'destination-out'; ctx.strokeStyle = '#000'; ctx.fillStyle = '#000'; } else { ctx.strokeStyle = op.c; ctx.fillStyle = op.c; }
+    ctx.lineCap = 'round'; ctx.lineJoin = 'round';
+    if (p.length === 1) { var w0 = op.press ? op.w * (0.3 + p[0][2] * 1.1) : op.w; ctx.beginPath(); ctx.arc(p[0][0], p[0][1], w0 / 2, 0, 6.2832); ctx.fill(); ctx.restore(); return; }
     for (var i = Math.max(1, from || 1); i < p.length; i++) {
       var a = p[i - 1], b = p[i], pr = (a[2] + b[2]) / 2;
       ctx.lineWidth = op.press ? op.w * (0.3 + pr * 1.1) : op.w;
       ctx.beginPath(); ctx.moveTo(a[0], a[1]); ctx.lineTo(b[0], b[1]); ctx.stroke();
     }
+    ctx.restore();
   }
   /* shapes: polygons are inscribed in the dragged box (so ellipse-like boxes squash them) */
   var SHAPES = [
@@ -600,7 +649,7 @@ dl.facts dd { margin: 0; }
   function drawShape(op) {
     var l = Math.min(op.x0, op.x1), t = Math.min(op.y0, op.y1), r = Math.max(op.x0, op.x1), b = Math.max(op.y0, op.y1);
     var cx = (l + r) / 2, cy = (t + b) / 2, rx = (r - l) / 2, ry = (b - t) / 2, d = shapeDef(op.kind);
-    ctx.save(); ctx.strokeStyle = op.c; ctx.lineWidth = op.w; ctx.lineJoin = 'round'; ctx.lineCap = 'round';
+    ctx.save(); applyClip(op); ctx.strokeStyle = op.c; ctx.lineWidth = op.w; ctx.lineJoin = 'round'; ctx.lineCap = 'round';
     ctx.setLineDash(dashFor(op.ls, op.w)); ctx.beginPath();
     if (op.kind === 'curve' || op.kind === 'carrow') {
       var qx = op.cx != null ? op.cx : (op.x0 + op.x1) / 2, qy = op.cy != null ? op.cy : (op.y0 + op.y1) / 2;
@@ -645,43 +694,101 @@ dl.facts dd { margin: 0; }
     if (op.t === 'h') drawShape(op);
     else if (op.t === 's') drawStroke(op, 1);
   }
-  function redraw(extra) {
-    var s = 0, useBase = true, i;
-    for (i = 0; i < ops.length; i++) if (ops[i].t === 'c') { s = i + 1; useBase = false; }
-    whiten(); if (base && useBase) ctx.drawImage(base, 0, 0);
-    for (i = s; i < ops.length; i++) drawOp(ops[i]);
-    if (extra) drawOp(extra);
-    if (pending) { drawOp(pending.op); drawHandle(); }
+
+  /* ---------- the document: layers, panels, history ---------- */
+  function docFresh() { layers = []; panelsList = []; activeL = null; activePanel = null; hist = []; redoH = []; pending = null; }
+  function ensureLayer() {
+    if (!activeL || layers.indexOf(activeL) < 0) activeL = layers[layers.length - 1] || null;
+    if (!activeL) { activeL = newLayer({ name: 'Layer 1' }); layers.push(activeL); }
+    return activeL;
+  }
+  function addOp(L, op, panel) {
+    L.ops.push(op); L.ver++; L.dirty = true; hist.push({ L: L, op: op, panel: panel || null }); redoH = []; updateButtons(); markDirty();
+  }
+  function undo() {
+    if (pending) { cancelPending(); return; }
+    var e = hist.pop(); if (!e) return;
+    var i = e.L.ops.lastIndexOf(e.op); if (i >= 0) e.L.ops.splice(i, 1);
+    e.L.ver++; e.L.dirty = true; redrawLayer(e.L);
+    if (e.panel) { panelsList = panelsList.filter(function (q) { return q !== e.panel; }); if (activePanel === e.panel.id) activePanel = null; }
+    redoH.push(e); paint(); renderPanels(); updateButtons(); markDirty();
+  }
+  function redo() {
+    if (pending) return; var e = redoH.pop(); if (!e) return;
+    e.L.ops.push(e.op); e.L.ver++; e.L.dirty = true; hist.push(e); redrawLayer(e.L);
+    if (e.panel) { panelsList.push(e.panel); activePanel = e.panel.id; }
+    paint(); renderPanels(); updateButtons(); markDirty();
   }
   /* curve tool: the curve waits for a bend. The dot sits on the middle of the curve; drag it, then tap elsewhere to finish. */
-  var pending = null;
   function handlePt(o) { return [0.25 * o.x0 + 0.5 * o.cx + 0.25 * o.x1, 0.25 * o.y0 + 0.5 * o.cy + 0.25 * o.y1]; }
   function drawHandle() {
     var o = pending.op, m = handlePt(o), r = cv.getBoundingClientRect(), sc = W / r.width;
     ctx.save(); ctx.beginPath(); ctx.arc(m[0], m[1], 15 * sc, 0, 6.2832); ctx.fillStyle = 'rgba(47,100,214,.18)'; ctx.fill();
     ctx.beginPath(); ctx.arc(m[0], m[1], 9 * sc, 0, 6.2832); ctx.fillStyle = '#2f64d6'; ctx.fill(); ctx.lineWidth = 2.5 * sc; ctx.strokeStyle = '#fff'; ctx.stroke(); ctx.restore();
   }
-  function startPending(op) {
+  function startPending(op, L) {
     var dx = op.x1 - op.x0, dy = op.y1 - op.y0, len = Math.sqrt(dx * dx + dy * dy) || 1;
     op.cx = (op.x0 + op.x1) / 2 + 2 * (-dy / len) * len * 0.2; op.cy = (op.y0 + op.y1) / 2 + 2 * (dx / len) * len * 0.2;
-    pending = { op: op }; redraw(); updateButtons(); setStatus('Drag the dot to bend the curve. Tap elsewhere to finish.');
+    pending = { op: op, L: L }; paint(); updateButtons(); setStatus('Drag the dot to bend the curve. Tap elsewhere to finish.');
   }
   function commitPending() {
-    if (!pending) return; var op = pending.op; pending = null;
-    ops.push(op); redoStack = []; redraw(); updateButtons(); markDirty();
+    if (!pending) return; var op = pending.op, L = pending.L; pending = null;
+    onLayer(L, function () { drawOp(op); }); addOp(L, op); paint();
   }
-  function cancelPending() { if (!pending) return; pending = null; redraw(); updateButtons(); setStatus(dirty ? 'Unsaved' : 'Saved'); }
+  function cancelPending() { if (!pending) return; pending = null; paint(); updateButtons(); setStatus(dirty ? 'Unsaved' : 'Saved'); }
   function handleHit(p) {
     var m = handlePt(pending.op), r = cv.getBoundingClientRect(), k = r.width / W;
     return Math.sqrt(Math.pow((p[0] - m[0]) * k, 2) + Math.pow((p[1] - m[1]) * k, 2)) < 36;
   }
   function updateButtons() {
-    document.getElementById('undo').disabled = (!ops.length && !pending) || !canDraw;
-    document.getElementById('redo').disabled = !redoStack.length || !canDraw;
+    document.getElementById('undo').disabled = (!hist.length && !pending) || !canDraw;
+    document.getElementById('redo').disabled = !redoH.length || !canDraw;
     document.getElementById('extend').disabled = !canDraw || H + EXTEND > MAX_H;
     var d = pages.length ? pages[cur] : null;
     document.getElementById('pagelabel').textContent = d ? 'Page ' + (cur + 1) + ' of ' + pages.length + '  ·  ' + W + ' × ' + H + ' px' : '';
   }
+
+  /* ---------- panels: drawn with the Panel frame tool, then named ---------- */
+  var pnLayer = document.getElementById('pnlayer');
+  function panelById(id) { for (var i = 0; i < panelsList.length; i++) if (panelsList[i].id === id) return panelsList[i]; return null; }
+  function addPanel(op) {
+    var n = panelsList.reduce(function (m, q) { var k = /(\d+)$/.exec(q.name); return Math.max(m, k ? +k[1] : 0); }, 0) + 1;
+    var pn = { id: 'pn' + (++pidSeq), name: 'Panel ' + n, x: Math.round(Math.min(op.x0, op.x1)), y: Math.round(Math.min(op.y0, op.y1)), w: Math.round(Math.abs(op.x1 - op.x0)), h: Math.round(Math.abs(op.y1 - op.y0)), notes: '' };
+    panelsList.push(pn); activePanel = pn.id; return pn;
+  }
+  function renderPanels() {
+    if (!pnLayer) return; pnLayer.textContent = '';
+    panelsList.forEach(function (pn) {
+      var d = document.createElement('div'); d.className = 'pnl' + (pn.id === activePanel ? ' on' : '');
+      d.style.left = Math.round(pn.x * zoom) + 'px'; d.style.top = Math.round(pn.y * zoom) + 'px'; d.style.width = Math.round(pn.w * zoom) + 'px'; d.style.height = Math.round(pn.h * zoom) + 'px';
+      var t = document.createElement('button'); t.type = 'button'; t.className = 'pnl-tag'; t.textContent = pn.name;
+      t.addEventListener('click', function (e) { e.stopPropagation(); if (pn.id === activePanel) showPanelManager(pn.id); else { selectPanel(pn.id); } });
+      d.appendChild(t); pnLayer.appendChild(d);
+    });
+  }
+  function selectPanel(id) { activePanel = id; renderPanels(); if (typeof onPanelSelected === 'function') onPanelSelected(); }
+  function panelsChanged() { renderPanels(); markDirty(); }
+  function showPanelManager(focusId) {
+    var o = openPanel('Panels · page ' + (cur + 1)), body = o.querySelector('.xbody');
+    if (!panelsList.length) { body.appendChild(mk('div', 'xnote', 'No panels on this page yet. Pick the Panel frame tool and drag to draw one; it gets a name here that you can change.')); return; }
+    panelsList.forEach(function (pn) {
+      var card = mk('div', 'pcard' + (pn.id === focusId ? ' on' : '')), name = document.createElement('input'), notes = document.createElement('textarea');
+      name.type = 'text'; name.value = pn.name; name.setAttribute('aria-label', 'Panel name'); name.addEventListener('input', function () { pn.name = name.value.trim() || pn.name; panelsChanged(); });
+      notes.value = pn.notes || ''; notes.placeholder = 'Notes for this panel: camera angle, mood, dialogue…'; notes.setAttribute('aria-label', 'Panel notes'); notes.addEventListener('input', function () { pn.notes = notes.value; markDirty(); });
+      var row = mk('div', 'acts'), go = bt('Select', 'btn'), del = bt('Delete panel', 'btn danger');
+      go.onclick = function () { selectPanel(pn.id); closeX(o); scroller.scrollTop = Math.max(0, pn.y * zoom - 20); };
+      del.onclick = function () {
+        if (!del.classList.contains('armed')) { del.classList.add('armed'); del.textContent = 'Tap again to delete'; setTimeout(function () { del.classList.remove('armed'); del.textContent = 'Delete panel'; }, 3500); return; }
+        panelsList = panelsList.filter(function (q) { return q !== pn; }); layers.forEach(function (L) { if (L.panel === pn.id) { L.panel = null; L.dirty = true; } }); if (activePanel === pn.id) activePanel = null;
+        panelsChanged(); closeX(o); showPanelManager();
+      };
+      row.append(go, del); card.append(name, notes, row); body.appendChild(card);
+    });
+  }
+  document.getElementById('panelsbtn').addEventListener('click', function () { showPanelManager(activePanel); });
+  var clipBtn = document.getElementById('clipbtn');
+  clipBtn.addEventListener('click', function () { clipOn = !clipOn; clipBtn.setAttribute('aria-pressed', String(clipOn)); setStatus(clipOn ? 'Drawing is kept inside the selected panel.' : 'Drawing is free again.'); });
+  function clipArg() { var pn = clipOn && activePanel ? panelById(activePanel) : null; return pn ? [pn.x, pn.y, pn.w, pn.h] : null; }
 
   /* ---------- drawing input ---------- */
   var active = null, panning = null;
@@ -693,7 +800,7 @@ dl.facts dd { margin: 0; }
   cv.addEventListener('pointerdown', function (e) {
     if (e.pointerType === 'touch' && (fingerPans || (active && active.touch))) {
       /* second finger while drawing: drop the unfinished stroke and scroll instead */
-      if (active && active.touch) { active = null; redraw(); }
+      if (active && active.touch) { var dropL = active.L; active = null; if (dropL) { redrawLayer(dropL); } paint(); }
       if (panning) return;
       panning = { id: e.pointerId, x: e.clientX, y: e.clientY }; cv.setPointerCapture(e.pointerId); return;
     }
@@ -704,12 +811,12 @@ dl.facts dd { margin: 0; }
       if (handleHit(pt(e))) active = { t: 'handle', id: e.pointerId, touch: e.pointerType === 'touch' }; else commitPending();
       return;
     }
-    var T = TOOLS[tool], s = sizeVal(), p = pt(e);
+    var L = ensureLayer(), T = TOOLS[tool], s = sizeVal(), p = pt(e), clip = clipArg();
     var isTouch = e.pointerType === 'touch';
-    if (tool === 'panel') active = { t: 'h', kind: 'rect', c: T.color, w: Math.max(3, s * 0.8), ls: 'solid', x0: p[0], y0: p[1], x1: p[0], y1: p[1], id: e.pointerId };
-    else if (tool === 'shape') active = { t: 'h', kind: shapeKind, c: shapeColor, w: Math.max(2, s), ls: lineStyle, x0: p[0], y0: p[1], x1: p[0], y1: p[1], id: e.pointerId };
-    else { active = { t: 's', c: T.color, w: s * T.mul, press: T.press && e.pointerType === 'pen', pts: [p], id: e.pointerId }; drawStroke(active, 1); }
-    if (active) active.touch = isTouch;
+    if (tool === 'panel') active = { t: 'h', kind: 'rect', c: T.color, w: Math.max(3, s * 0.8), ls: 'solid', x0: p[0], y0: p[1], x1: p[0], y1: p[1], id: e.pointerId, isPanel: true };
+    else if (tool === 'shape') active = { t: 'h', kind: shapeKind, c: shapeColor, w: Math.max(2, s), ls: lineStyle, x0: p[0], y0: p[1], x1: p[0], y1: p[1], id: e.pointerId, clip: clip };
+    else { active = { t: 's', c: T.color, w: s * T.mul, press: T.press && e.pointerType === 'pen', erase: !!T.erase, clip: clip, pts: [p], id: e.pointerId }; onLayer(L, function () { drawStroke(active, 1); }); schedulePaint(); }
+    if (active) { active.touch = isTouch; active.L = L; }
   });
   cv.addEventListener('pointermove', function (e) {
     if (panning && e.pointerId === panning.id) {
@@ -720,7 +827,7 @@ dl.facts dd { margin: 0; }
     e.preventDefault();
     if (active.t === 'handle') {
       var hp = pt(e), o = pending.op;
-      o.cx = 2 * hp[0] - 0.5 * (o.x0 + o.x1); o.cy = 2 * hp[1] - 0.5 * (o.y0 + o.y1); redraw(); return;
+      o.cx = 2 * hp[0] - 0.5 * (o.x0 + o.x1); o.cy = 2 * hp[1] - 0.5 * (o.y0 + o.y1); paint(); return;
     }
     if (active.t === 'h') {
       var p = pt(e), dx = p[0] - active.x0, dy = p[1] - active.y0;
@@ -728,21 +835,28 @@ dl.facts dd { margin: 0; }
         var side = Math.max(Math.abs(dx), Math.abs(dy)); dx = (dx < 0 ? -1 : 1) * side; dy = (dy < 0 ? -1 : 1) * side;
       }
       active.x1 = active.x0 + dx; active.y1 = active.y0 + dy;
-      redraw(active); return;
+      paint(active); return;
     }
     var evs = e.getCoalescedEvents ? e.getCoalescedEvents() : null; if (!evs || !evs.length) evs = [e];
     var from = active.pts.length;
     for (var i = 0; i < evs.length; i++) active.pts.push(pt(evs[i]));
-    drawStroke(active, from);
+    onLayer(active.L, function () { drawStroke(active, from); }); schedulePaint();
   });
   function endPtr(e) {
     if (panning && e.pointerId === panning.id) { panning = null; return; }
     if (!active || e.pointerId !== active.id) return;
-    var op = active; active = null;
+    var op = active, L = op.L; active = null; delete op.L;
     if (op.t === 'handle') return;
-    if (op.t === 'h' && Math.abs(op.x1 - op.x0) < 4 && Math.abs(op.y1 - op.y0) < 4) { redraw(); return; }
-    if (op.t === 'h' && (op.kind === 'curve' || op.kind === 'carrow')) { startPending(op); return; }
-    ops.push(op); redoStack = []; updateButtons(); markDirty();
+    if (op.t === 'h' && Math.abs(op.x1 - op.x0) < 4 && Math.abs(op.y1 - op.y0) < 4) { paint(); return; }
+    if (op.t === 'h' && (op.kind === 'curve' || op.kind === 'carrow')) { startPending(op, L); return; }
+    if (op.t === 'h') {
+      var pn = null;
+      if (op.isPanel) { pn = addPanel(op); op.panelId = pn.id; delete op.isPanel; }
+      onLayer(L, function () { drawOp(op); }); addOp(L, op, pn); paint();
+      if (pn) { renderPanels(); setStatus(pn.name + ' added. Tap its tag to rename it or add notes.'); }
+      return;
+    }
+    addOp(L, op); paint();
   }
   cv.addEventListener('pointerup', endPtr);
   cv.addEventListener('pointercancel', endPtr);
@@ -779,20 +893,20 @@ dl.facts dd { margin: 0; }
   })();
   document.querySelectorAll('[data-tool]').forEach(function (b) { b.addEventListener('click', function () { selectTool(b.dataset.tool); }); });
   selectTool('pen');
-  document.getElementById('undo').addEventListener('click', function () { if (pending) { cancelPending(); return; } if (!ops.length) return; redoStack.push(ops.pop()); redraw(); updateButtons(); markDirty(); });
-  document.getElementById('redo').addEventListener('click', function () { if (pending || !redoStack.length) return; ops.push(redoStack.pop()); redraw(); updateButtons(); markDirty(); });
+  document.getElementById('undo').addEventListener('click', undo);
+  document.getElementById('redo').addEventListener('click', redo);
   document.addEventListener('keydown', function (e) {
-    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z' && document.activeElement !== notesEl) { e.preventDefault(); document.getElementById(e.shiftKey ? 'redo' : 'undo').click(); }
+    if ((e.ctrlKey || e.metaKey) && e.key.toLowerCase() === 'z' && document.activeElement !== notesEl && !/^(INPUT|TEXTAREA)$/.test((document.activeElement || {}).tagName || '')) { e.preventDefault(); document.getElementById(e.shiftKey ? 'redo' : 'undo').click(); }
   });
   var cleanBtn = document.getElementById('clean'), cleanTimer = null;
-  function disarmClean() { clearTimeout(cleanTimer); cleanBtn.classList.remove('armed'); cleanBtn.textContent = 'Clean page'; }
+  function disarmClean() { clearTimeout(cleanTimer); cleanBtn.classList.remove('armed'); cleanBtn.textContent = 'Clean layer'; }
   cleanBtn.addEventListener('click', function () {
     if (!canDraw) return;
     if (!cleanBtn.classList.contains('armed')) {
       cleanBtn.classList.add('armed'); cleanBtn.textContent = 'Tap again to clean'; cleanTimer = setTimeout(disarmClean, 3500); return;
     }
-    disarmClean(); commitPending(); ops.push({ t: 'c' }); redoStack = []; redraw(); updateButtons(); markDirty();
-    setStatus('Page cleaned. Undo brings it back.');
+    disarmClean(); commitPending(); var L = ensureLayer(); L.ops.push({ t: 'c' }); L.ver++; L.dirty = true; hist.push({ L: L, op: L.ops[L.ops.length - 1], panel: null }); redoH = [];
+    redrawLayer(L); paint(); updateButtons(); markDirty(); setStatus('Layer cleaned. Undo brings it back.');
   });
   document.getElementById('zin').addEventListener('click', function () { autoFit = false; zoom = Math.min(2.5, zoom * 1.25); applyZoom(); });
   document.getElementById('zout').addEventListener('click', function () { autoFit = false; zoom = Math.max(0.25, zoom / 1.25); applyZoom(); });
@@ -800,7 +914,7 @@ dl.facts dd { margin: 0; }
   window.addEventListener('resize', function () { if (autoFit) fit(); });
   document.getElementById('extend').addEventListener('click', function () {
     if (!canDraw || H + EXTEND > MAX_H) return;
-    commitPending(); setCanvasHeight(H + EXTEND); redraw(); updateButtons(); markDirty();
+    commitPending(); setCanvasHeight(H + EXTEND); paint(); updateButtons(); markDirty();
     scroller.scrollTop = scroller.scrollHeight;
   });
   var fingerBtn = document.getElementById('finger');
@@ -819,7 +933,7 @@ dl.facts dd { margin: 0; }
     notesTimer = setTimeout(function () { queue(function () { return writeDoc(p).then(function () { setStatus('Saved ' + clock()); scheduleExport(); }); }); }, 900);
   });
 
-  /* ---------- saving ---------- */
+  /* ---------- saving: every changed layer is its own PNG, plus the flat picture and a small JSON that describes the page ---------- */
   function queue(fn) {
     chain = chain.then(fn, fn).catch(function (err) {
       var m = (err && (err.message || err.code)) ? String(err.message || err.code) : '';
@@ -839,21 +953,35 @@ dl.facts dd { margin: 0; }
     var t = document.createElement('canvas'); t.width = 160; t.height = Math.round(160 * H / W);
     t.getContext('2d').drawImage(cv, 0, 0, t.width, t.height); return t.toDataURL('image/jpeg', 0.6);
   }
+  function blobOf(c) { return new Promise(function (r) { c.toBlob(r, 'image/png'); }); }
+  function docAssetsOf(p) { return p.docAssets || (p.assetId ? [p.assetId] : []); }
   function flush() {
     commitPending(); clearTimeout(saveTimer);
     return queue(function () {
       if (!dirty || !db || !assets) return;
       dirty = false;
-      var p = pages[cur], h = H, thumb = makeThumb();
+      var p = pages[cur], h = H, thumb, lys = layers.slice(), pans = JSON.parse(JSON.stringify(panelsList));
+      paint(); thumb = makeThumb();
       setStatus('Saving…');
-      return new Promise(function (r) { cv.toBlob(r, 'image/png'); }).then(function (blob) {
-        if (!blob) throw new Error('could not make image');
-        return assets.upload(blob);
-      }).then(function (up) {
-        var old = p.assetId; p.assetId = up.id; p.height = h; p.updatedAt = new Date().toISOString(); p.thumb = thumb;
-        return writeDoc(p).then(function () {
-          if (old && old !== up.id) assets.delete(old).catch(function () {});
-          renderThumbs(); setStatus('Saved ' + clock()); scheduleExport();
+      /* take every picture now, so what is uploaded is exactly what is on screen at this moment */
+      var snaps = lys.map(function (L) { return (L.asset && !L.dirty) ? null : { L: L, ver: L.ver, blob: blobOf(L.cv) }; });
+      var compBlob = blobOf(cv), oldAssets = docAssetsOf(p).slice(), seq = Promise.resolve();
+      snaps.forEach(function (s) {
+        if (!s) return;
+        seq = seq.then(function () { return s.blob; }).then(function (b) { if (!b) throw new Error('could not make image'); return assets.upload(b, 'png'); }).then(function (up) { s.path = up.id; });
+      });
+      return seq.then(function () { return compBlob; }).then(function (b) { if (!b) throw new Error('could not make image'); return assets.upload(b, 'png'); }).then(function (up) {
+        var comp = up.id;
+        snaps.forEach(function (s) { if (s && s.path) { s.L.asset = s.path; if (s.L.ver === s.ver) s.L.dirty = false; } });
+        var manifest = { v: 2, height: h, panels: pans, composite: comp, layers: lys.map(function (L) { return { id: L.id, panel: L.panel, component: L.component, ref: L.ref, name: L.name, desc: L.desc, visible: L.visible, flat: L.flat, asset: L.asset }; }) };
+        return assets.upload(new Blob([JSON.stringify(manifest)], { type: 'application/json' }), 'json').then(function (mp) {
+          p.assetId = mp.id; p.comp = comp; p.mani = manifest; p.height = h; p.updatedAt = new Date().toISOString(); p.thumb = thumb;
+          p.docAssets = [mp.id, comp].concat(lys.map(function (L) { return L.asset; }).filter(Boolean));
+          return writeDoc(p).then(function () {
+            var keep = {}; p.docAssets.forEach(function (a) { keep[a] = 1; });
+            oldAssets.forEach(function (a) { if (!keep[a]) assets.delete(a).catch(function () {}); });
+            renderThumbs(); setStatus('Saved ' + clock()); scheduleExport();
+          });
         });
       });
     });
@@ -893,7 +1021,7 @@ dl.facts dd { margin: 0; }
     add.addEventListener('click', addPage); box.appendChild(add);
     var rb = pbtn('reorderbtn', reorderMode ? 'Done' : '⇅ Reorder', reorderMode ? 'Done' : '⇅', 'Move pages earlier or later in this chapter');
     if (reorderMode) rb.classList.add('reorder-on');
-    pbtn('exportbtn', '↑ Export to Drive', '↑ Drive', 'Copies your pages into your Drive folder so Claude can read them');
+    pbtn('exportbtn', '✓ Save chapter', '✓ Save', 'Saves the page you are on and copies the chapter to your Drive folder so Claude can read it');
     pbtn('viewbtn', '▤ Exported pages', '▤', 'See the pages already copied to your Drive folder, chapter by chapter');
   }
   function narrowLayout() { return window.matchMedia && window.matchMedia('(max-width: 720px)').matches; }
@@ -914,10 +1042,10 @@ dl.facts dd { margin: 0; }
       return showPage(i, token);
     });
   }
-  /* keep a local copy of the page we are leaving, so coming back never depends on the network */
+  /* keep the page we are leaving in memory (layers, undo history), so coming back never depends on the network */
   function cacheLeaving() {
     var leaving = pages[cur];
-    if (leaving && canDraw) { try { var cc = document.createElement('canvas'); cc.width = cv.width; cc.height = cv.height; cc.getContext('2d').drawImage(cv, 0, 0); leaving.cache = { bm: cc, h: H, at: Date.now() }; trimCache(); } catch (e) { leaving.cache = null; } }
+    if (leaving && canDraw) { leaving.cache = { layers: layers, panels: panelsList, hist: hist, redoH: redoH, activeId: activeL ? activeL.id : null, activePanel: activePanel, h: H, at: Date.now() }; trimCache(); }
   }
   function loadImg(src) {
     return new Promise(function (res, rej) {
@@ -929,45 +1057,63 @@ dl.facts dd { margin: 0; }
   }
   function trimCache() {
     var withCache = allPages.filter(function (q) { return q.cache; }).sort(function (a, b) { return b.cache.at - a.cache.at; });
-    withCache.slice(4).forEach(function (q) { q.cache = null; });
+    withCache.slice(2).forEach(function (q) { q.cache = null; });
+  }
+  function imgOf(path) { return assets.download(path).then(function (b) { return loadImg(URL.createObjectURL(b)); }); }
+  /* read a saved page: the new JSON (with its layers) or an older single PNG */
+  function loadDocAt(path) {
+    if (!/\.json$/i.test(path)) return imgOf(path).then(function (im) { return { m: null, legacy: im }; });
+    return assets.download(path).then(function (b) { return b.text(); }).then(function (t) {
+      var m = JSON.parse(t);
+      return Promise.all((m.layers || []).map(function (ml) { return ml.asset ? imgOf(ml.asset).then(function (im) { return { ml: ml, im: im }; }) : Promise.resolve({ ml: ml, im: null }); })).then(function (rs) { return { m: m, rs: rs }; });
+    });
+  }
+  function applyLoaded(p, d) {
+    if (d.legacy) {
+      var ih = d.legacy.naturalHeight || d.legacy.height; if (ih > H) setCanvasHeight(ih);
+      var L = newLayer({ name: 'Page', flat: true, base: d.legacy, asset: p.assetId }); layers.push(L); redrawLayer(L); p.comp = p.assetId; p.mani = null; p.docAssets = [p.assetId];
+    } else {
+      var m = d.m; if ((m.height || 0) > H) setCanvasHeight(m.height);
+      d.rs.forEach(function (r) {
+        var L = newLayer({ id: r.ml.id, panel: r.ml.panel, component: r.ml.component, ref: r.ml.ref, name: r.ml.name, desc: r.ml.desc, visible: r.ml.visible, flat: r.ml.flat, asset: r.ml.asset, base: r.im });
+        var n = /(\d+)$/.exec(L.id); if (n) lidSeq = Math.max(lidSeq, +n[1]); layers.push(L); redrawLayer(L);
+      });
+      panelsList = (m.panels || []).map(function (q) { return q; }); panelsList.forEach(function (q) { var n = /(\d+)$/.exec(q.id); if (n) pidSeq = Math.max(pidSeq, +n[1]); });
+      p.comp = m.composite; p.mani = m; p.docAssets = [p.assetId, m.composite].concat(layers.map(function (L) { return L.asset; }).filter(Boolean));
+    }
   }
   function showPage(i, token) {
-    {
-      cur = i; var p = pages[i]; pending = null;
-      ops = []; redoStack = []; base = null; canDraw = false; dirty = false;
-      setCanvasHeight(p.height || DEFAULT_H); whiten();
-      notesEl.value = p.notes || ''; renderThumbs(); updateButtons(); scroller.scrollTop = 0;
-      if (autoFit) fit();
-      if (p.cache) { base = p.cache.bm; if (p.cache.h > H) setCanvasHeight(p.cache.h); redraw(); canDraw = true; updateButtons(); return; }
-      if (!p.assetId) { canDraw = !!db || true; updateButtons(); return; }
-      setStatus('Loading…');
-      function tryLoad(id) {
-        return assets.download(id).then(function (b) { return loadImg(URL.createObjectURL(b)); });
-      }
-      return tryLoad(p.assetId).catch(function (err) {
-        /* the image we remembered is gone: another device saved a newer one. Ask the database for the current one. */
-        if (!db) throw err;
-        return db.doc('pages/' + p.id).get().then(function (snap) {
-          var x = snap.exists ? snap.data() : null;
-          if (!x) throw new Error('page was deleted elsewhere');
-          if (!x.assetId) { p.assetId = null; return null; }
-          if (x.assetId === p.assetId) throw err;
-          p.assetId = x.assetId; p.height = x.height || p.height; if (x.notes != null) { p.notes = x.notes; notesEl.value = p.notes; } if (x.thumb) p.thumb = x.thumb;
-          return tryLoad(p.assetId);
-        });
-      }).then(function (im) {
-          if (token !== openToken) return;
-          if (!im) { canDraw = true; updateButtons(); setStatus('Saved'); return; }
-          if (token !== openToken) return;
-          base = im; var ih = im.naturalHeight || im.height; if (ih > H) { setCanvasHeight(ih); }
-          redraw(); canDraw = true; updateButtons(); setStatus('Saved');
-        })
-        .catch(function (err) {
-          if (token !== openToken) return;
-          var m = err && err.message ? ' (' + String(err.message).slice(0, 30) + ')' : '';
-          setStatus('Page image did not load' + m + '. Tap to retry.', true); updateButtons();
-        });
+    cur = i; var p = pages[i]; docFresh(); canDraw = false; dirty = false;
+    setCanvasHeight(p.height || DEFAULT_H);
+    notesEl.value = p.notes || ''; renderThumbs(); updateButtons(); scroller.scrollTop = 0;
+    if (autoFit) fit();
+    function ready() { ensureLayer(); paint(); renderPanels(); canDraw = true; updateButtons(); if (typeof renderLayers === 'function') renderLayers(); }
+    if (p.cache) {
+      var c = p.cache; layers = c.layers; panelsList = c.panels; hist = c.hist; redoH = c.redoH; activePanel = c.activePanel;
+      activeL = layers.filter(function (L) { return L.id === c.activeId; })[0] || null; if (c.h !== H) setCanvasHeight(c.h); ready(); return;
     }
+    if (!p.assetId) { ready(); return; }
+    setStatus('Loading…');
+    return loadDocAt(p.assetId).catch(function (err) {
+      /* the page we remembered is gone: another device saved a newer one. Ask the database for the current one. */
+      if (!db) throw err;
+      return db.doc('pages/' + p.id).get().then(function (snap) {
+        var x = snap.exists ? snap.data() : null;
+        if (!x) throw new Error('page was deleted elsewhere');
+        if (!x.assetId) { p.assetId = null; return null; }
+        if (x.assetId === p.assetId) throw err;
+        p.assetId = x.assetId; p.height = x.height || p.height; if (x.notes != null) { p.notes = x.notes; notesEl.value = p.notes; } if (x.thumb) p.thumb = x.thumb;
+        return loadDocAt(p.assetId);
+      });
+    }).then(function (d) {
+      if (token !== openToken) return;
+      if (d) applyLoaded(p, d);
+      ready(); setStatus('Saved');
+    }).catch(function (err) {
+      if (token !== openToken) return;
+      var m = err && err.message ? ' (' + String(err.message).slice(0, 30) + ')' : '';
+      setStatus('Page image did not load' + m + '. Tap to retry.', true); updateButtons();
+    });
   }
   function addPage() {
     flush().then(function () {
@@ -989,7 +1135,7 @@ dl.facts dd { margin: 0; }
     queue(function () {
       var jobs = [];
       if (db) jobs.push(db.doc('pages/' + p.id).delete());
-      if (assets && p.assetId) jobs.push(assets.delete(p.assetId).catch(function () {}));
+      if (assets) docAssetsOf(p).forEach(function (a) { jobs.push(assets.delete(a).catch(function () {})); });
       return Promise.all(jobs);
     });
     pages.splice(cur, 1); allPages.splice(allPages.indexOf(p), 1);
@@ -999,7 +1145,7 @@ dl.facts dd { margin: 0; }
   function disarm() { clearTimeout(delTimer); delBtn.classList.remove('armed'); delBtn.textContent = 'Delete page'; }
 
   document.getElementById('dl').addEventListener('click', function () {
-    commitPending(); cv.toBlob(function (blob) {
+    commitPending(); paint(); cv.toBlob(function (blob) {
       if (!blob) return;
       var a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = 'page-' + String(cur + 1).padStart(3, '0') + '.png';
       document.body.appendChild(a); a.click(); a.remove(); setTimeout(function () { URL.revokeObjectURL(a.href); }, 4000);
@@ -1082,9 +1228,10 @@ dl.facts dd { margin: 0; }
   }
   function makeAssets() {
     return {
-      upload: function (blob) {
-        var path = uid + '/' + Date.now() + '-' + Math.random().toString(16).slice(2, 8) + '.png';
-        return sb.storage.from(BUCKET).upload(path, blob, { contentType: 'image/png', upsert: false }).then(must).then(function () { return { id: path }; });
+      upload: function (blob, ext) {
+        ext = ext || 'png';
+        var path = uid + '/' + Date.now() + '-' + Math.random().toString(16).slice(2, 8) + '.' + ext;
+        return sb.storage.from(BUCKET).upload(path, blob, { contentType: ext === 'json' ? 'application/json' : 'image/png', upsert: false }).then(must).then(function () { return { id: path }; });
       },
       delete: function (id) { return sb.storage.from(BUCKET).remove([id]).then(function () {}); },
       download: function (id) { return sb.storage.from(BUCKET).download(id).then(must).then(function (r) { return r.data; }); }
@@ -2092,7 +2239,7 @@ dl.facts dd { margin: 0; }
     chapter = ch; try { localStorage.setItem('ml-chap-' + proj, String(ch)); } catch (e) {}
     pages = pagesOfChapter(proj, ch);
     if (!pages.length) { var p = { id: pid(proj, ch, 1), order: 1, assetId: null, height: DEFAULT_H, notes: '' }; pages.push(p); allPages.push(p); queue(function () { return writeDoc(p); }); }
-    cur = -1; ops = []; redoStack = []; base = null; canDraw = false; dirty = false; pending = null; reorderMode = false; updateChapterBtn();
+    cur = -1; docFresh(); canDraw = false; dirty = false; reorderMode = false; updateChapterBtn();
     return openPage(0).then(function () { if (!statusEl.classList.contains('err')) setStatus(db && assets ? 'Ready. Saves automatically.' : 'Saving is off here. Use Save PNG.'); });
   }
   function openChapter(ch) {
@@ -2135,7 +2282,7 @@ dl.facts dd { margin: 0; }
         if (!dl.classList.contains('armed')) { dl.classList.add('armed'); dl.textContent = 'Tap again to delete'; setTimeout(function () { dl.classList.remove('armed'); dl.textContent = 'Delete this chapter'; }, 3500); return; }
         var n = chapter; pagesOfChapter(proj, n).forEach(function (p) { allPages.splice(allPages.indexOf(p), 1); queue(function () { return db ? db.doc('pages/' + p.id).delete() : null; }); });
         m.list = m.list.filter(function (x) { return x !== n; }); delete m.names[n]; saveMeta(proj, m);
-        pages = []; cur = -1; dirty = false; pending = null; ops = []; closeX(o); loadChapter(m.list[0]);
+        pages = []; cur = -1; dirty = false; docFresh(); closeX(o); loadChapter(m.list[0]);
       };
       foot.append(nw, rn, dl);
     });
@@ -2156,6 +2303,11 @@ dl.facts dd { margin: 0; }
     if (f) { if (f.name === fname) return Promise.resolve(f.id); return patchMeta(f.id, { name: fname }).then(function () { f.name = fname; return f.id; }); }
     return gfetch(API + 'files?fields=id', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: fname, mimeType: FOLDER_MIME, parents: [root] }) })
       .then(function (r) { return r.json(); }).then(function (j) { folders.push({ id: j.id, name: fname }); return j.id; });
+  }
+  function getComposite(p) {
+    if (p.comp) return assets.download(p.comp);
+    if (/\.json$/i.test(p.assetId)) return assets.download(p.assetId).then(function (b) { return b.text(); }).then(function (tx) { var m = JSON.parse(tx); p.mani = m; p.comp = m.composite; return assets.download(m.composite); });
+    p.comp = p.assetId; return assets.download(p.assetId);
   }
   function exportSketches(manual) {
     if (exporting || !db || !assets || !gHave() || !proj) return Promise.resolve(false);
@@ -2184,7 +2336,7 @@ dl.facts dd { margin: 0; }
                   if (!p.assetId) return;
                   s2 = s2.then(function () {
                     var need = !old || st[p.id] !== p.assetId;
-                    var step = need ? assets.download(p.assetId).then(function (blob) {
+                    var step = need ? getComposite(p).then(function (blob) {
                       if (old) return patchFile(old, blob, 'image/png');
                       return createFile(fid, want, 'image/png', blob).then(function (nf) { nf._folder = fid; old = nf; byId[p.id] = nf; });
                     }) : Promise.resolve();
@@ -2209,7 +2361,7 @@ dl.facts dd { margin: 0; }
           });
         });
       });
-    }).then(function () { exporting = false; say(done ? 'Exported ' + done + ' page' + (done === 1 ? '' : 's') + ' to Drive.' : 'Drive copy is up to date.'); return true; })
+    }).then(function () { exporting = false; say(done ? 'Chapter saved: ' + done + ' page' + (done === 1 ? '' : 's') + ' copied to Drive.' : 'Chapter saved. The Drive copy is up to date.'); return true; })
       .catch(function (e) { exporting = false; say('Export failed (' + String(e && e.message || e).slice(0, 40) + ').'); return false; });
   }
 
