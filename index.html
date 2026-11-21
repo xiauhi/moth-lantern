@@ -286,6 +286,14 @@ dl.facts dd { margin: 0; }
 .scrt { font-size: 11px; color: var(--muted); min-width: 74px; }
 .scrx { flex: 1; min-width: 0; overflow-wrap: anywhere; }
 .scrok { color: #3f9b72; font-weight: 700; }
+.studio { display: flex; flex-direction: column; gap: 8px; height: 100%; min-height: 0; }
+.sbar, .selbar { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; flex: none; }
+.selbar { padding: 8px 10px; border: 1px solid #2f64d6; border-radius: 10px; background: color-mix(in srgb, #2f64d6 10%, var(--panel)); }
+.selbar[hidden], .sbar[hidden], .sstat[hidden] { display: none; }
+.selbar input[type=text] { flex: 1; min-width: 160px; min-height: 40px; box-sizing: border-box; border: 1px solid var(--line); border-radius: 8px; padding: 0 10px; background: var(--bg); color: inherit; font: inherit; font-size: 15px; }
+.sstat { color: var(--muted); font-size: 14px; padding: 4px 2px; flex: none; }
+.sscroll { flex: 1; min-height: 0; overflow: auto; background: #0e0f12; border-radius: 10px; padding: 8px; overscroll-behavior: contain; }
+.scv { display: block; margin: 0 auto; background: #fff; box-shadow: 0 2px 16px rgba(0,0,0,.5); }
 .cvwrap { position: relative; width: max-content; }
 .guide { position: absolute; inset: 50px; border: 1.5px dashed rgba(70, 95, 150, .5); pointer-events: none; box-sizing: border-box; }
 .guide[hidden] { display: none; }
@@ -539,6 +547,7 @@ dl.facts dd { margin: 0; }
     <button class="btn tab" data-view="bible" type="button">Bible</button>
     <button class="btn tab" data-view="script" type="button">Script</button>
     <button class="btn tab" data-view="sketch" type="button">Sketchbook</button>
+    <button class="btn tab" data-view="studio" type="button">Studio</button>
   </nav>
   <button class="btn gap" id="signout" type="button">Sign out</button>
 </header>
@@ -552,6 +561,7 @@ dl.facts dd { margin: 0; }
 <section class="view lib" id="v-notebook" hidden></section>
 <section class="view lib" id="v-bible" hidden></section>
 <section class="view lib" id="v-script" hidden></section>
+<section class="view lib" id="v-studio" hidden></section>
 
 <section class="view app" id="v-sketch" hidden>
   <header class="top">
@@ -1800,7 +1810,7 @@ dl.facts dd { margin: 0; }
 
   /* ---------- start ---------- */
   /* ---------- navigation: project chooser + Notebook / Bible / Sketchbook ---------- */
-  var VIEWS = { choose: 'v-choose', notebook: 'v-notebook', bible: 'v-bible', script: 'v-script', sketch: 'v-sketch' };
+  var VIEWS = { choose: 'v-choose', notebook: 'v-notebook', bible: 'v-bible', script: 'v-script', sketch: 'v-sketch', studio: 'v-studio' };
   function remember() { try { localStorage.setItem('ml-nav', JSON.stringify({ proj: proj, view: view })); } catch (e) {} }
   function setView(v) {
     view = v;
@@ -1810,7 +1820,7 @@ dl.facts dd { margin: 0; }
     var chip = document.getElementById('projchip'); chip.hidden = !inProj; if (p) chip.textContent = p.name + ' ▾';
     document.querySelectorAll('.tab').forEach(function (b) { if (b.dataset.view === v) b.setAttribute('aria-current', 'page'); else b.removeAttribute('aria-current'); });
     if (v === 'sketch' && autoFit) fit();
-    if (v === 'notebook' || v === 'bible' || v === 'script') libs[v].show();
+    if (v === 'notebook' || v === 'bible' || v === 'script' || v === 'studio') libs[v].show();
     if (v === 'choose') buildCards();
     document.title = 'moth-lantern';
     remember();
@@ -2966,6 +2976,307 @@ dl.facts dd { margin: 0; }
     };
   }
 
+
+  /* =====================================================================================================
+     STUDIO: the finished page. The sketchbook export (Drive: sketches/Chapter NN/NNN_id/) says what is on the page;
+     Claude renders each layer on its own into Drive: studio/Chapter NN/NNN_id/layers/<same file name as in the sketch export>.png
+     (transparent background, same shape as the layer's box in page.json, any resolution). Here the layers are stacked, moved, flagged for
+     a re-render, bubbles and frames are edited, and each page is saved as one long picture: studio/Chapter NN/final/NNN_id.png
+     ===================================================================================================== */
+  function putText(fid, list, name, text, mime) {
+    var f = list.filter(function (x) { return x.name === name; })[0];
+    return f ? patchFile(f, text, mime).then(function () { return f; }) : createFile(fid, name, mime, text);
+  }
+  function xfDrag(bw, bh, T0, h, p, p0) {
+    var T = { cx: T0.cx, cy: T0.cy, sx: T0.sx, sy: T0.sy, th: T0.th };
+    if (h.k === 'move') { T.cx = T0.cx + (p[0] - p0[0]); T.cy = T0.cy + (p[1] - p0[1]); return T; }
+    if (h.k === 'rot') { var th = Math.atan2(p[1] - T0.cy, p[0] - T0.cx) + Math.PI / 2, near = Math.round(th / (Math.PI / 2)) * (Math.PI / 2); T.th = Math.abs(th - near) < 0.05 ? near : th; return T; }
+    var c = Math.cos(-T0.th), n = Math.sin(-T0.th), dx = p[0] - T0.cx, dy = p[1] - T0.cy, lx = dx * c - dy * n, ly = dx * n + dy * c;
+    var hw = bw / 2 * T0.sx, hh = bh / 2 * T0.sy, ox = -h.hx * hw, oy = -h.hy * hh, nw = 2 * hw, nh = 2 * hh, lcx = 0, lcy = 0;
+    if (h.hx && h.hy) { var k = Math.max(Math.max(12, (lx - ox) * h.hx) / (2 * hw), Math.max(12, (ly - oy) * h.hy) / (2 * hh)); nw = 2 * hw * k; nh = 2 * hh * k; lcx = ox + h.hx * nw / 2; lcy = oy + h.hy * nh / 2; }
+    else if (h.hx) { nw = Math.max(12, (lx - ox) * h.hx); lcx = ox + h.hx * nw / 2; }
+    else { nh = Math.max(12, (ly - oy) * h.hy); lcy = oy + h.hy * nh / 2; }
+    var cs = Math.cos(T0.th), sn = Math.sin(T0.th); T.cx = T0.cx + lcx * cs - lcy * sn; T.cy = T0.cy + lcx * sn + lcy * cs; T.sx = T0.sx * nw / (2 * hw); T.sy = T0.sy * nh / (2 * hh);
+    return T;
+  }
+  function bubbleLines(b) {
+    var c = document.createElement('canvas').getContext('2d'), k = b.k, maxW = k === 'shout' ? (b.w - 80) / 1.55 : (k === 'narration' || k === 'glow' || k === 'sfx') ? b.w - 40 : (b.w - 56) / 1.4;
+    c.font = (k === 'sfx' ? '900 italic ' : '700 ') + b.fs + 'px ' + BUB_FONT; var words = String(b.text).toUpperCase().split(/\s+/).filter(Boolean), out = [], cur2 = '';
+    words.forEach(function (w) { var tl = cur2 ? cur2 + ' ' + w : w; if (cur2 && c.measureText(tl).width > Math.max(40, maxW)) { out.push(cur2); cur2 = w; } else cur2 = tl; });
+    if (cur2) out.push(cur2); return out.length ? out : [' '];
+  }
+  function makeStudio(root) {
+    var pj = null, ch = 1, pages = [], pi = 0, data = null, st = null, sel = null, saver = null, drag = null, urls = [], token = 0, zoom2 = 1, fitOn = true, frameWin = false, rrTimer = null, busy = false, panning = null;
+    root.innerHTML = '<div class="studio"><div class="sbar"></div><div class="selbar" hidden></div><div class="sstat"></div><div class="sscroll"><canvas class="scv"></canvas></div></div>';
+    var bar = root.querySelector('.sbar'), selbar = root.querySelector('.selbar'), stat = root.querySelector('.sstat'), scrollEl = root.querySelector('.sscroll'), cvs = root.querySelector('.scv'), sx2 = cvs.getContext('2d');
+    var chapSel = document.createElement('select'), pageSel = document.createElement('select'), zr = document.createElement('input'), bLay = bt('Layers', 'btn'), bFit = bt('Fit', 'btn'), bExp = bt('Save page picture', 'btn pri'), bExpC = bt('Save whole chapter', 'btn'), stEl = mk('span', 'hint');
+    [chapSel, pageSel].forEach(function (s) { s.className = 'charsel'; }); chapSel.setAttribute('aria-label', 'Chapter'); pageSel.setAttribute('aria-label', 'Page');
+    zr.type = 'range'; zr.min = '25'; zr.max = '300'; zr.value = '100'; zr.setAttribute('aria-label', 'Zoom'); var zl = mk('label', 'size'); zl.append('Zoom ', zr);
+    bar.append(chapSel, pageSel, bLay, zl, bFit, bExp, bExpC, stEl);
+    cvs.style.touchAction = 'none';
+    function say(s, err) { stEl.textContent = s || ''; stEl.classList.toggle('err', !!err); }
+    function setStat(s) { stat.textContent = s || ''; stat.hidden = !s; }
+    function lkey(L) { return L.id || L.file; }
+    function sl(L) { var k = lkey(L); return st.layers[k] || (st.layers[k] = {}); }
+    function bbox0(L) { var b = L.bbox; return b ? { cx: b.x + b.w / 2, cy: b.y + b.h / 2, w: b.w, h: b.h } : null; }
+    function pOff(pid) { var p = pid && st.panels[pid]; return p ? { x: p.dx || 0, y: p.dy || 0, cx: p.cx || 0, cy: p.cy || 0 } : { x: 0, y: 0, cx: 0, cy: 0 }; }
+    function layerBoxW(L) { var b = bbox0(L); if (!b) return null; var s = sl(L), po = pOff(L.panel); return { T: { cx: b.cx + po.x + (s.dx || 0), cy: b.cy + po.y + (s.dy || 0), sx: s.sx || 1, sy: s.sy || 1, th: s.th || 0 }, bw: b.w, bh: b.h }; }
+    function setLayerT(L, T) { var b = bbox0(L), s = sl(L), po = pOff(L.panel); s.dx = T.cx - b.cx - po.x; s.dy = T.cy - b.cy - po.y; s.sx = T.sx; s.sy = T.sy; s.th = T.th; }
+    function bubbles() {
+      return data.layers.filter(function (L) { return L.scriptLine && L.bbox; }).map(function (L) {
+        var li = L.scriptLine, o = st.bubbles[li.id] || (st.bubbles[li.id] = {});
+        if (o.x == null) {
+          var lay = bubbleLayout(li.type, li.text, 340), tail = li.type === 'speech' || li.type === 'thought' || li.type === 'whisper';
+          o.k = li.type; o.text = li.text; o.fs = lay.fs; o.w = lay.w; o.h = lay.h; o.x = Math.round(L.bbox.x + (L.bbox.w - lay.w) / 2); o.y = L.bbox.y; o.panel = L.panel || null;
+          if (tail) { o.tx = Math.round(o.x + lay.w * 0.3); o.ty = Math.round(o.y + lay.h + 64); }
+        }
+        o.id = li.id; o.name = li.name || ''; o.who = li.who || ''; return o;
+      }).filter(function (o) { return !o.del; });
+    }
+    function layersDrawn() { return data.layers.filter(function (L) { return !L.scriptLine && L.component !== 'border' && L.bbox && !(st.layers[lkey(L)] && st.layers[lkey(L)].hide); }); }
+    function polyOf(pn) { var o = pOff(pn.id), pts = pn.corners && pn.corners.length >= 3 ? pn.corners : [[pn.x, pn.y], [pn.x + pn.w, pn.y], [pn.x + pn.w, pn.y + pn.h], [pn.x, pn.y + pn.h]]; return pts.map(function (q) { return [q[0] + o.x + o.cx, q[1] + o.y + o.cy]; }); }
+    /* paint the whole page on a canvas. edit = true adds the selection handles and shows layers that are not rendered yet as faint sketches */
+    function compose(c2d, edit) {
+      var keep = ctx; ctx = c2d;
+      try {
+        c2d.save(); c2d.setTransform(1, 0, 0, 1, 0, 0); c2d.globalAlpha = 1; c2d.globalCompositeOperation = 'source-over'; c2d.fillStyle = '#fff'; c2d.fillRect(0, 0, W, data.H); c2d.restore();
+        var ls = layersDrawn();
+        function art(L) {
+          var im = L.renderIm || L.sketchIm; if (!im) return; var g = layerBoxW(L), b = bbox0(L);
+          c2d.save(); c2d.translate(g.T.cx, g.T.cy); c2d.rotate(g.T.th); c2d.scale(g.T.sx, g.T.sy); c2d.translate(-b.cx, -b.cy);
+          if (L.renderIm) c2d.drawImage(im, L.bbox.x, L.bbox.y, L.bbox.w, L.bbox.h); else { c2d.globalAlpha = edit ? 0.5 : 1; if (L.flat) c2d.globalCompositeOperation = 'multiply'; c2d.drawImage(im, 0, 0); }
+          c2d.restore();
+        }
+        data.panels.forEach(function (pn) {
+          c2d.save(); var pts = polyOf(pn); c2d.beginPath(); pts.forEach(function (q, i) { if (i) c2d.lineTo(q[0], q[1]); else c2d.moveTo(q[0], q[1]); }); c2d.closePath(); c2d.clip();
+          ls.filter(function (L) { return L.panel === pn.id; }).forEach(art); c2d.restore();
+        });
+        ls.filter(function (L) { return !L.panel || !data.panels.some(function (p) { return p.id === L.panel; }); }).forEach(art);
+        data.panels.forEach(function (pn) { var pts = polyOf(pn); c2d.save(); c2d.beginPath(); pts.forEach(function (q, i) { if (i) c2d.lineTo(q[0], q[1]); else c2d.moveTo(q[0], q[1]); }); c2d.closePath(); c2d.lineWidth = 5; c2d.strokeStyle = '#111'; c2d.lineJoin = 'miter'; c2d.stroke(); c2d.restore(); });
+        bubbles().forEach(function (b) { var po = pOff(b.panel), o = { t: 'b', k: b.k, x: b.x + po.x, y: b.y + po.y, w: b.w, h: b.h, fs: b.fs, lines: bubbleLines(b) }; if (b.tx != null) { o.tx = b.tx + po.x; o.ty = b.ty + po.y; } drawBubble(o); });
+        if (edit) overlay(c2d);
+      } finally { ctx = keep; }
+    }
+    function selBox() {
+      if (!sel) return null;
+      if (sel.t === 'layer') { var L = data.layers.filter(function (x) { return lkey(x) === sel.id; })[0]; if (!L) return null; var g = layerBoxW(L); return g && { T: g.T, bw: g.bw, bh: g.bh, rot: true, L: L }; }
+      if (sel.t === 'bubble') { var b = bubbles().filter(function (x) { return x.id === sel.id; })[0]; if (!b) return null; var po = pOff(b.panel); return { T: { cx: b.x + po.x + b.w / 2, cy: b.y + po.y + b.h / 2, sx: 1, sy: 1, th: 0 }, bw: b.w, bh: b.h, rot: false, b: b, po: po }; }
+      if (sel.t === 'frame') { var pn = data.panels.filter(function (x) { return x.id === sel.id; })[0]; if (!pn) return null; var pts = polyOf(pn), xs = pts.map(function (q) { return q[0]; }), ys = pts.map(function (q) { return q[1]; }), x0 = Math.min.apply(null, xs), y0 = Math.min.apply(null, ys), w = Math.max.apply(null, xs) - x0, h = Math.max.apply(null, ys) - y0; return { T: { cx: x0 + w / 2, cy: y0 + h / 2, sx: 1, sy: 1, th: 0 }, bw: w, bh: h, rot: false, pn: pn }; }
+      return null;
+    }
+    var XH2 = [{ k: 'nw', hx: -1, hy: -1 }, { k: 'n', hx: 0, hy: -1 }, { k: 'ne', hx: 1, hy: -1 }, { k: 'e', hx: 1, hy: 0 }, { k: 'se', hx: 1, hy: 1 }, { k: 's', hx: 0, hy: 1 }, { k: 'sw', hx: -1, hy: 1 }, { k: 'w', hx: -1, hy: 0 }];
+    function hpos(B, h) {
+      var T = B.T, hw = B.bw / 2 * T.sx, hh = B.bh / 2 * T.sy, sc = W / (cvs.getBoundingClientRect().width || W), lx = h.hx * hw, ly = h.hy * hh;
+      if (h.k === 'rot') { lx = 0; ly = -hh - 44 * sc; }
+      if (h.k === 'tail') return [B.b.tx + B.po.x, B.b.ty + B.po.y];
+      var c = Math.cos(T.th), n = Math.sin(T.th); return [T.cx + lx * c - ly * n, T.cy + lx * n + ly * c];
+    }
+    function handlesOf(B) {
+      var hs = [];
+      if (B.L) { hs = XH2.slice(); hs.push({ k: 'rot' }); }
+      else if (B.b) { hs = [{ k: 'se', hx: 1, hy: 1 }, { k: 'e', hx: 1, hy: 0 }, { k: 's', hx: 0, hy: 1 }]; if (B.b.tx != null) hs.push({ k: 'tail' }); }
+      return hs;
+    }
+    function overlay(c2d) {
+      var sc = W / (cvs.getBoundingClientRect().width || W);
+      layersDrawn().forEach(function (L) { if (!L.renderIm && !(L.scriptLine)) { var g = layerBoxW(L); c2d.save(); c2d.translate(g.T.cx, g.T.cy); c2d.rotate(g.T.th); c2d.strokeStyle = '#d6694a'; c2d.lineWidth = 2 * sc; c2d.setLineDash([6 * sc, 5 * sc]); c2d.strokeRect(-g.bw / 2 * g.T.sx, -g.bh / 2 * g.T.sy, g.bw * g.T.sx, g.bh * g.T.sy); c2d.restore(); } });
+      var B = selBox(); if (!B) return; var T = B.T, hw = B.bw / 2 * T.sx, hh = B.bh / 2 * T.sy;
+      c2d.save(); c2d.translate(T.cx, T.cy); c2d.rotate(T.th); c2d.strokeStyle = '#2f64d6'; c2d.lineWidth = 2 * sc; c2d.setLineDash([8 * sc, 6 * sc]); c2d.strokeRect(-hw, -hh, 2 * hw, 2 * hh); c2d.restore(); c2d.setLineDash([]);
+      handlesOf(B).forEach(function (h) {
+        var q = hpos(B, h), r = 8 * sc; c2d.fillStyle = h.k === 'rot' || h.k === 'tail' ? '#2f64d6' : '#fff'; c2d.strokeStyle = h.k === 'rot' || h.k === 'tail' ? '#fff' : '#2f64d6'; c2d.lineWidth = 2.5 * sc; c2d.beginPath();
+        if (h.k === 'rot' || h.k === 'tail') c2d.arc(q[0], q[1], r * 1.2, 0, 6.2832); else c2d.rect(q[0] - r, q[1] - r, 2 * r, 2 * r); c2d.fill(); c2d.stroke();
+      });
+    }
+    var rq = 0; function redraw() { if (!data || rq) return; rq = requestAnimationFrame(function () { rq = 0; if (data) compose(sx2, true); }); }
+    function sizeCanvas() { if (!data) return; cvs.width = W; cvs.height = data.H; cvs.style.width = Math.round(W * zoom2) + 'px'; cvs.style.height = Math.round(data.H * zoom2) + 'px'; zr.value = String(Math.round(zoom2 * 100)); redraw(); }
+    function fitS() { zoom2 = Math.max(0.25, Math.min(1.5, (scrollEl.clientWidth - 16) / W)); sizeCanvas(); }
+    zr.addEventListener('input', function () { fitOn = false; zoom2 = +zr.value / 100; sizeCanvas(); }); bFit.onclick = function () { fitOn = true; fitS(); };
+    window.addEventListener('resize', function () { if (fitOn && !root.hidden) fitS(); });
+    /* ----- saving the edits ----- */
+    function markSave() { if (saver) saver.mark(900); clearTimeout(rrTimer); rrTimer = setTimeout(syncRerender, 2500); }
+    function flaggedList() { return data.layers.filter(function (L) { var s = st.layers[lkey(L)]; return s && s.flag; }); }
+    function syncRerender() {
+      if (!data) return Promise.resolve(); var base = pages[pi].name, fl = flaggedList(), chN = ch;
+      return folderPath([DRIVE_ROOT, pj, 'studio', 'Chapter ' + pad(chN, 2)]).then(function (fid) {
+        return listFiles(fid).then(function (fs) {
+          var jf = fs.filter(function (x) { return x.name === 'rerender.json'; })[0], idx = {};
+          return (jf ? readDoc(jf) : Promise.resolve('{}')).then(function (tx) { try { idx = JSON.parse(tx) || {}; } catch (e) { idx = {}; } }).then(function () {
+            if (fl.length) idx[base] = fl.map(function (L) { var s = st.layers[lkey(L)]; return { layer: L.name, component: L.component, character: L.character || null, file: 'layers/' + L.file.replace(/^.*\//, ''), note: s.note || '', since: s.flagAt || null }; }); else delete idx[base];
+            var md = ['# Layers to re-render: ' + chapterName(pj, chN), '', 'Re-render ONLY the layers listed here, one by one. Save each to `studio/Chapter ' + pad(chN, 2) + '/<page>/layers/<file>` (same name, replacing the old one). The flag clears itself in Studio when a newer file appears.', ''];
+            Object.keys(idx).sort().forEach(function (pg) { md.push('## Page ' + pg, ''); idx[pg].forEach(function (e) { md.push('- **' + e.layer + '** (' + e.component + (e.character ? ', character id `' + e.character + '`' : '') + ') — `' + e.file + '`' + (e.note ? ' — ' + e.note : '')); }); md.push(''); });
+            if (!Object.keys(idx).length) md.push('(nothing flagged)');
+            return putText(fid, fs, 'rerender.json', JSON.stringify(idx, null, 1), 'application/json').then(function () { return putText(fid, fs, 'rerender.md', md.join('\n'), 'text/markdown'); });
+          });
+        });
+      }).catch(function (e) { say('Could not update the re-render list (' + msgOf(e) + ')', true); });
+    }
+    /* ----- loading a chapter's pages and one page ----- */
+    function dl(f) { return gfetch(API + 'files/' + f.id + '?alt=media').then(function (r) { return r.blob(); }); }
+    function imgOf(f) { return dl(f).then(blobImg).then(function (r) { urls.push(r.u); return r.im; }).catch(function () { return null; }); }
+    function loadPages() {
+      return folderPath([DRIVE_ROOT, pj, 'sketches']).then(listChildFolders).then(function (fs) {
+        var re = new RegExp('^Chapter 0*' + ch + '(?: - .*)?$'), cf = fs.filter(function (f) { return re.test(f.name); })[0]; if (!cf) return [];
+        return listChildFolders(cf.id).then(function (ps) { return ps.filter(function (f) { return /^\d+_/.test(f.name); }).sort(function (a, b) { return a.name < b.name ? -1 : 1; }); });
+      });
+    }
+    function loadPageData(pg) {
+      var d = { base: pg.name, layers: [], panels: [], H: 1600 };
+      return Promise.all([listFiles(pg.id), listChildFolders(pg.id)]).then(function (a) {
+        var jf = a[0].filter(function (f) { return f.name === 'page.json'; })[0], lf = a[1].filter(function (f) { return f.name === 'layers'; })[0];
+        if (!jf) throw new Error('page.json missing (Save chapter in the Sketchbook first)');
+        return Promise.all([readDoc(jf), lf ? listFiles(lf.id) : [], folderPath([DRIVE_ROOT, pj, 'studio', 'Chapter ' + pad(ch, 2), pg.name]).then(function (sf) { return Promise.all([listFiles(sf), folderPath([DRIVE_ROOT, pj, 'studio', 'Chapter ' + pad(ch, 2), pg.name, 'layers']).then(listFiles)]); })]);
+      }).then(function (r) {
+        var j = JSON.parse(r[0]), sk = {}, rd = {}; r[1].forEach(function (f) { sk[f.name] = f; }); r[2][1].forEach(function (f) { rd[f.name] = f; });
+        d.H = (j.page && j.page.height) || 1600; d.panels = j.panels || [];
+        d.layers = (j.layers || []).map(function (L) { var fn = L.file ? L.file.replace(/^.*\//, '') : ''; return { id: L.id || '', file: fn || ('layer' + L.order), name: L.name, component: L.component, character: L.character, panel: L.panel, desc: L.description, bbox: L.bbox, scriptLine: L.scriptLine, flat: false, skF: sk[fn], rdF: rd[fn] }; });
+        var stF = r[2][0].filter(function (f) { return f.name === 'studio.json'; })[0], sp = stF ? readDoc(stF).then(function (tx) { try { return JSON.parse(tx); } catch (e) { return null; } }) : Promise.resolve(null);
+        return sp.then(function (s0) {
+          d.stF = stF; d.st = s0 && s0.v === 1 ? s0 : { v: 1, layers: {}, bubbles: {}, panels: {} };
+          return Promise.all(d.layers.map(function (L) {
+            if (L.scriptLine || L.component === 'border' || !L.bbox) return null;
+            return Promise.all([L.rdF ? imgOf(L.rdF) : null, !L.rdF && L.skF ? imgOf(L.skF) : null]).then(function (ims) { L.renderIm = ims[0]; L.sketchIm = ims[1]; });
+          }));
+        }).then(function () {
+          d.layers.forEach(function (L) { var s = d.st.layers[L.id || L.file]; if (s && s.flag && L.rdF && s.flagAt && L.rdF.modifiedTime && L.rdF.modifiedTime > s.flagAt) { s.flag = false; s.note = ''; delete s.flagAt; d.cleared = true; } });
+          return d;
+        });
+      });
+    }
+    function openPageIdx(i) {
+      var tok = ++token; urls.forEach(function (u) { URL.revokeObjectURL(u); }); urls = []; data = null; sel = null; selbar.hidden = true; pi = i; setStat('Loading the page…'); say('');
+      lsSet('ml-studio-' + pj, { ch: ch, page: i });
+      return (saver ? saver.flush() : Promise.resolve(true)).then(function () { return loadPageData(pages[i]); }).then(function (d) {
+        if (tok !== token) return; data = d; st = d.st; setStat(''); var stF = d.stF;
+        saver = makeSaver(function () { return stF; }, function (nf) { stF = nf; }, [DRIVE_ROOT, pj, 'studio', 'Chapter ' + pad(ch, 2), pages[i].name], 'studio.json', function () { return JSON.stringify(st); }, say);
+        if (d.cleared) markSave();
+        var miss = data.layers.filter(function (L) { return !L.scriptLine && L.component !== 'border' && L.bbox && !L.renderIm; }).length;
+        setStat(miss ? miss + ' layer' + (miss === 1 ? '' : 's') + ' not rendered yet: shown as faint sketches with an orange dotted outline. Claude renders them into Drive (studio folder).' : '');
+        if (fitOn) fitS(); else sizeCanvas();
+      }).catch(function (e) { if (tok === token) { data = null; setStat('Could not open this page (' + msgOf(e) + ').'); } });
+    }
+    /* ----- picking and dragging ----- */
+    function pt2(e) { var r = cvs.getBoundingClientRect(); return [(e.clientX - r.left) * W / r.width, (e.clientY - r.top) * data.H / r.height]; }
+    function inBox(B, p) { var T = B.T, c = Math.cos(-T.th), n = Math.sin(-T.th), dx = p[0] - T.cx, dy = p[1] - T.cy, lx = dx * c - dy * n, ly = dx * n + dy * c; return Math.abs(lx) <= B.bw / 2 * T.sx && Math.abs(ly) <= B.bh / 2 * T.sy; }
+    function inPoly(pts, p) { var r = false; for (var i = 0, j = pts.length - 1; i < pts.length; j = i++) { if ((pts[i][1] > p[1]) !== (pts[j][1] > p[1]) && p[0] < (pts[j][0] - pts[i][0]) * (p[1] - pts[i][1]) / (pts[j][1] - pts[i][1]) + pts[i][0]) r = !r; } return r; }
+    function hit(p) {
+      var B = selBox(), R = 26 * W / (cvs.getBoundingClientRect().width || W);
+      if (B) { var best = null, bd = R; handlesOf(B).forEach(function (h) { var q = hpos(B, h), d = Math.hypot(p[0] - q[0], p[1] - q[1]); if (d <= bd) { bd = d; best = h; } }); if (best) return { sel: sel, h: best }; }
+      var bs = bubbles(); for (var i = bs.length - 1; i >= 0; i--) { var b = bs[i], po = pOff(b.panel); if (inBox({ T: { cx: b.x + po.x + b.w / 2, cy: b.y + po.y + b.h / 2, sx: 1, sy: 1, th: 0 }, bw: b.w, bh: b.h }, p)) return { sel: { t: 'bubble', id: b.id }, h: { k: 'move' } }; }
+      var ls = layersDrawn(); for (var k = ls.length - 1; k >= 0; k--) { var g = layerBoxW(ls[k]); if (inBox(g, p)) return { sel: { t: 'layer', id: lkey(ls[k]) }, h: { k: 'move' } }; }
+      for (var m = data.panels.length - 1; m >= 0; m--) if (inPoly(polyOf(data.panels[m]), p)) return { sel: { t: 'frame', id: data.panels[m].id }, h: { k: 'move' } };
+      return null;
+    }
+    cvs.addEventListener('pointerdown', function (e) {
+      if (!data) return; e.preventDefault(); try { cvs.setPointerCapture(e.pointerId); } catch (x) {}
+      var p = pt2(e), h = hit(p);
+      if (!h) { if (e.pointerType === 'touch') { panning = { x: e.clientX, y: e.clientY, l: scrollEl.scrollLeft, t: scrollEl.scrollTop, id: e.pointerId }; } else { sel = null; renderSelbar(); redraw(); } return; }
+      sel = h.sel; var B = selBox(); renderSelbar();
+      drag = { id: e.pointerId, h: h.h, p0: p, B: B, T0: B && { cx: B.T.cx, cy: B.T.cy, sx: B.T.sx, sy: B.T.sy, th: B.T.th }, snap: JSON.stringify(st), moved: false }; redraw();
+    });
+    cvs.addEventListener('pointermove', function (e) {
+      if (panning && panning.id === e.pointerId) { scrollEl.scrollLeft = panning.l - (e.clientX - panning.x); scrollEl.scrollTop = panning.t - (e.clientY - panning.y); return; }
+      if (!drag || drag.id !== e.pointerId || !data) return; e.preventDefault(); var p = pt2(e), B = drag.B; drag.moved = true;
+      if (sel.t === 'layer') setLayerT(B.L, xfDrag(B.bw, B.bh, drag.T0, drag.h, p, drag.p0));
+      else if (sel.t === 'bubble') {
+        var b = B.b, dx = p[0] - drag.p0[0], dy = p[1] - drag.p0[1], o = drag.o || (drag.o = { x: b.x, y: b.y, w: b.w, h: b.h, tx: b.tx, ty: b.ty });
+        if (drag.h.k === 'move') { b.x = o.x + dx; b.y = o.y + dy; if (o.tx != null) { b.tx = o.tx + dx; b.ty = o.ty + dy; } }
+        else if (drag.h.k === 'tail') { b.tx = p[0] - B.po.x; b.ty = p[1] - B.po.y; }
+        else { if (drag.h.hx) b.w = Math.max(60, o.w + dx * drag.h.hx); if (drag.h.hy) b.h = Math.max(40, o.h + dy * drag.h.hy); }
+      } else if (sel.t === 'frame') {
+        var po = st.panels[sel.id] || (st.panels[sel.id] = {}), o2 = drag.o || (drag.o = { dx: po.dx || 0, dy: po.dy || 0, cx: po.cx || 0, cy: po.cy || 0 });
+        if (frameWin) { po.cx = o2.cx + p[0] - drag.p0[0]; po.cy = o2.cy + p[1] - drag.p0[1]; } else { po.dx = o2.dx + p[0] - drag.p0[0]; po.dy = o2.dy + p[1] - drag.p0[1]; }
+      }
+      redraw();
+    });
+    function endDrag(e) { if (panning && panning.id === e.pointerId) panning = null; if (drag && drag.id === e.pointerId) { var mv = drag.moved; drag = null; if (mv) { markSave(); } renderSelbar(); redraw(); } }
+    cvs.addEventListener('pointerup', endDrag); cvs.addEventListener('pointercancel', endDrag);
+    /* ----- the bar under the toolbar: what is selected and what can be done with it ----- */
+    function renderSelbar() {
+      selbar.textContent = ''; var B = selBox(); selbar.hidden = !B; if (!B) return;
+      function tgl(label, on, fn) { var b = bt(label, 'btn' + (on ? ' on' : '')); b.setAttribute('aria-pressed', String(!!on)); b.onclick = fn; return b; }
+      if (B.L) {
+        var L = B.L, s = sl(L);
+        selbar.append(mk('b', '', L.name || L.component), tgl(s.flag ? 'Flagged for re-render' : 'Flag for re-render', s.flag, function () { s.flag = !s.flag; if (s.flag) s.flagAt = new Date().toISOString(); else { delete s.flagAt; } markSave(); renderSelbar(); }));
+        var note = document.createElement('input'); note.type = 'text'; note.placeholder = 'What is wrong? (for the re-render)'; note.value = s.note || ''; note.setAttribute('aria-label', 'Re-render note'); note.addEventListener('input', function () { s.note = note.value; markSave(); }); if (s.flag) selbar.appendChild(note);
+        var rs = bt('Reset position', 'btn'), hd = bt('Hide', 'btn'); rs.onclick = function () { s.dx = s.dy = s.th = 0; s.sx = s.sy = 1; markSave(); redraw(); }; hd.onclick = function () { s.hide = true; sel = null; markSave(); renderSelbar(); redraw(); }; selbar.append(rs, hd);
+      } else if (B.b) {
+        var b = B.b, ta = document.createElement('input'); ta.type = 'text'; ta.value = b.text; ta.setAttribute('aria-label', 'Bubble text'); ta.addEventListener('input', function () { b.text = ta.value; markSave(); redraw(); });
+        var ty = document.createElement('select'); ty.className = 'charsel'; SCRIPT_TYPES.forEach(function (x) { var o = document.createElement('option'); o.value = x.k; o.textContent = x.n; ty.appendChild(o); }); ty.value = b.k;
+        ty.addEventListener('change', function () { b.k = ty.value; if (b.k === 'speech' || b.k === 'thought' || b.k === 'whisper') { if (b.tx == null) { b.tx = b.x + b.w * 0.3; b.ty = b.y + b.h + 64; } } else { delete b.tx; delete b.ty; } markSave(); renderSelbar(); redraw(); });
+        var fs = document.createElement('input'); fs.type = 'range'; fs.min = '18'; fs.max = '90'; fs.value = String(b.fs); fs.setAttribute('aria-label', 'Text size'); fs.addEventListener('input', function () { b.fs = +fs.value; markSave(); redraw(); });
+        var rm = bt('Remove', 'btn danger'); rm.onclick = function () { b.del = true; sel = null; markSave(); renderSelbar(); redraw(); };
+        selbar.append(mk('b', '', 'Bubble' + (b.name ? ' · ' + b.name : '')), ta, ty, mk('span', 'hint', 'Text size'), fs, rm);
+      } else if (B.pn) {
+        var pn = B.pn; selbar.append(mk('b', '', 'Frame · ' + pn.name), tgl('Move with its contents', !frameWin, function () { frameWin = false; renderSelbar(); }), tgl('Move the window only', frameWin, function () { frameWin = true; renderSelbar(); }));
+        var rf = bt('Reset frame', 'btn'); rf.onclick = function () { delete st.panels[pn.id]; markSave(); redraw(); }; selbar.appendChild(rf);
+      }
+    }
+    function showLayersDialog() {
+      if (!data) return; var o = openPanel('Layers · page ' + (pi + 1)), body = o.querySelector('.xbody');
+      function row(label, sub, on, fn) { var b = bt('', 'btn' + (on ? ' on' : '')); b.append(mk('span', '', label), mk('small', '', sub)); b.onclick = function () { closeX(o); fn(); }; return b; }
+      var list = mk('div', 'xlist');
+      data.panels.forEach(function (pn) { list.appendChild(row('Frame · ' + pn.name, 'move the whole panel', sel && sel.t === 'frame' && sel.id === pn.id, function () { sel = { t: 'frame', id: pn.id }; renderSelbar(); redraw(); })); });
+      data.layers.slice().reverse().forEach(function (L) {
+        if (L.component === 'border' || !L.bbox) return; var s = st.layers[lkey(L)] || {};
+        if (L.scriptLine) { var bb = st.bubbles[L.scriptLine.id]; if (bb && bb.del) { list.appendChild(row('Bubble · ' + L.scriptLine.text.slice(0, 24), 'removed: tap to bring back', false, function () { delete bb.del; markSave(); redraw(); })); return; } list.appendChild(row('Bubble · ' + L.scriptLine.text.slice(0, 24), compOfSafe(L), sel && sel.t === 'bubble' && sel.id === L.scriptLine.id, function () { sel = { t: 'bubble', id: L.scriptLine.id }; renderSelbar(); redraw(); })); return; }
+        list.appendChild(row(L.name || L.component, (s.hide ? 'hidden · ' : '') + (s.flag ? 'flagged for re-render · ' : '') + (L.renderIm ? 'rendered' : 'not rendered yet') + (s.hide ? ' (tap to show)' : ''), sel && sel.t === 'layer' && sel.id === lkey(L), function () { if (s.hide) { s.hide = false; markSave(); } sel = { t: 'layer', id: lkey(L) }; renderSelbar(); redraw(); }));
+      });
+      body.appendChild(list);
+    }
+    function compOfSafe(L) { return L.panel || 'page'; }
+    bLay.onclick = showLayersDialog;
+    /* ----- saving the finished picture ----- */
+    function savePicture(d, s0, pg) {
+      var keepD = data, keepS = st; data = d; st = s0;
+      var c = document.createElement('canvas'); c.width = W; c.height = d.H; compose(c.getContext('2d'), false); data = keepD; st = keepS;
+      return new Promise(function (r) { c.toBlob(r, 'image/png'); }).then(function (blob) {
+        return folderPath([DRIVE_ROOT, pj, 'studio', 'Chapter ' + pad(ch, 2), 'final']).then(function (fid) {
+          return listFiles(fid).then(function (fs) { var f = fs.filter(function (x) { return x.name === pg.name + '.png'; })[0]; return f ? patchFile(f, blob, 'image/png') : createFile(fid, pg.name + '.png', 'image/png', blob); });
+        });
+      });
+    }
+    bExp.onclick = function () {
+      if (!data || busy) return; busy = true; say('Saving the picture…');
+      (saver ? saver.flush() : Promise.resolve(true)).then(function () { return savePicture(data, st, pages[pi]); }).then(function () { say('Saved ' + pages[pi].name + '.png to studio/Chapter ' + pad(ch, 2) + '/final'); }).catch(function (e) { say('Could not save (' + msgOf(e) + ')', true); }).then(function () { busy = false; });
+    };
+    bExpC.onclick = function () {
+      if (!pages.length || busy) return; busy = true; var n = 0, seq = Promise.resolve();
+      pages.forEach(function (pg, i) {
+        seq = seq.then(function () {
+          say('Saving page ' + (i + 1) + ' of ' + pages.length + '…');
+          return (i === pi && data ? Promise.resolve({ d: data, s: st }) : loadPageData(pg).then(function (d) { return { d: d, s: d.st }; })).then(function (o) { return savePicture(o.d, o.s, pg); }).then(function () { n++; });
+        });
+      });
+      seq.then(function () { say('Saved ' + n + ' page' + (n === 1 ? '' : 's') + ' to studio/Chapter ' + pad(ch, 2) + '/final'); }).catch(function (e) { say('Stopped at page ' + (n + 1) + ' (' + msgOf(e) + ')', true); }).then(function () { busy = false; });
+    };
+    /* ----- opening the view ----- */
+    function fillSelects() {
+      var meta = getMeta(pj); chapSel.textContent = ''; meta.list.forEach(function (n) { var o = document.createElement('option'); o.value = String(n); o.textContent = chapterName(pj, n, meta); chapSel.appendChild(o); }); chapSel.value = String(ch);
+      pageSel.textContent = ''; pages.forEach(function (pg, i) { var o = document.createElement('option'); o.value = String(i); o.textContent = 'Page ' + (i + 1); pageSel.appendChild(o); }); pageSel.value = String(pi);
+    }
+    function openChapterS(n) {
+      ch = n; pages = []; data = null; sel = null; renderSelbar(); setStat('Looking for the sketchbook pages…'); say('');
+      return loadPages().then(function (ps) {
+        pages = ps; fillSelects();
+        if (!ps.length) { setStat('No sketchbook pages saved to Drive for this chapter yet. In the Sketchbook, tap Save chapter first.'); return; }
+        var last = lsGet('ml-studio-' + pj, null); return openPageIdx(last && last.ch === ch && last.page < ps.length ? last.page : 0).then(fillSelects);
+      }).catch(function (e) { setStat('Could not load (' + msgOf(e) + ').'); });
+    }
+    chapSel.addEventListener('change', function () { var n = +chapSel.value; (saver ? saver.flush() : Promise.resolve(true)).then(function (ok) { if (ok) openChapterS(n); else chapSel.value = String(ch); }); });
+    pageSel.addEventListener('change', function () { openPageIdx(+pageSel.value); });
+    stEl.addEventListener('click', function () { if (stEl.classList.contains('err') && saver) saver.flush(); });
+    return {
+      show: function () {
+        var p = projOf(proj); root.style.setProperty('--pa', p.color);
+        if (!gHave()) { bar.hidden = true; setStat(''); stat.hidden = false; stat.textContent = 'Connect Google Drive on the Notebook, Bible or Script page first, then come back.'; return; }
+        bar.hidden = false; var other = pj !== proj; pj = proj;
+        if (other) { data = null; saver = null; pages = []; }
+        openChapterS(chapter || 1);
+      },
+      flush: function () { return saver ? saver.flush() : Promise.resolve(true); }
+    };
+  }
+
   /* ----- plain files and the reference-image grid (the earlier file view) ----- */
   function pageLib(ctx) {
     var lib = null;
@@ -3244,7 +3555,7 @@ dl.facts dd { margin: 0; }
             seq = seq.then(function () {
               var json = { page: { id: p.id, number: pageNo, chapter: chapName, width: W, height: mani.height || DEFAULT_H, notes: p.notes || '' },
                 panels: (mani.panels || []).map(function (pn) { return { id: pn.id, name: pn.name, x: pn.x, y: pn.y, w: pn.w, h: pn.h, corners: pn.pts || null, notes: pn.notes || '', crop: panelFiles[pn.id] || null, brief: (panelFiles[pn.id] || '').replace(/\.png$/, '.md') || null, scriptPanel: pn.sp || null }; }),
-                layers: items.map(function (it, i) { return { order: i + 1, name: it.ml.name, component: it.ml.component, character: it.ml.ref || null, panel: it.ml.panel || null, description: it.ml.desc || '', file: it.blob ? 'layers/' + it.fname : null, bbox: it.bbox || null, scriptLine: it.ml.lineInfo || null }; }) };
+                layers: items.map(function (it, i) { return { order: i + 1, id: it.ml.id, name: it.ml.name, component: it.ml.component, character: it.ml.ref || null, panel: it.ml.panel || null, description: it.ml.desc || '', file: it.blob ? 'layers/' + it.fname : null, bbox: it.bbox || null, scriptLine: it.ml.lineInfo || null }; }) };
               return createFile(dfid, 'page.json', 'application/json', JSON.stringify(json, null, 1));
             });
             return seq.then(function () { urls.forEach(function (u) { URL.revokeObjectURL(u); }); return mani; });
@@ -3374,6 +3685,7 @@ dl.facts dd { margin: 0; }
   libs.notebook = makeHub(document.getElementById('v-notebook'), 'notebook');
   libs.bible = makeHub(document.getElementById('v-bible'), 'bible');
   libs.script = makeHub(document.getElementById('v-script'), 'script');
+  libs.studio = makeStudio(document.getElementById('v-studio'));
   window.addEventListener('pagehide', function () { Object.keys(libs).forEach(function (k) { libs[k].flush(); }); });
 
   /* ---------- sign in / boot ---------- */
