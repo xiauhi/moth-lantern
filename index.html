@@ -286,7 +286,7 @@ dl.facts dd { margin: 0; }
 .shapebar .btn svg { width: 24px; height: 24px; stroke: currentColor; fill: none; stroke-width: 1.8; stroke-linejoin: round; stroke-linecap: round; display: block; }
 .shapebar .colr { padding: 0 12px; }
 .shapebar .colr.on { box-shadow: 0 0 0 2px var(--accent); background: var(--panel); color: inherit; border-color: var(--accent); }
-.scroller { flex: 1; min-height: 0; overflow: auto; background: var(--desk); border-radius: 8px; padding: 16px; overscroll-behavior: contain; -webkit-overflow-scrolling: touch; position: relative; }
+.scroller { flex: 1; min-height: 0; overflow: auto; background: var(--desk); border-radius: 8px; padding: 16px; overscroll-behavior: contain; -webkit-overflow-scrolling: touch; position: relative; touch-action: pan-x pan-y; }
 .sheet { width: max-content; margin: 0 auto; }
 canvas { display: block; background: #fff; touch-action: none; box-shadow: 0 2px 14px rgba(0,0,0,.28); cursor: crosshair; -webkit-user-select: none; user-select: none; }
 .pagelabel { font-size: 12px; color: var(--muted); margin: 0 0 6px; text-align: center; font-variant-numeric: tabular-nums; }
@@ -528,6 +528,7 @@ dl.facts dd { margin: 0; }
       <button class="btn" data-tool="shape"><span class="sw sq" style="--c:#17181c"></span>Shapes &amp; lines</button>
       <button class="btn" data-tool="panel"><span class="sw sq" style="--c:#17181c"></span>Panel frame</button>
       <button class="btn" data-tool="eraser"><span class="sw" style="--c:#ffffff"></span>Eraser</button>
+      <button class="btn" data-tool="xform" title="Move, resize or rotate what is on the selected layer"><span class="sw sq" style="--c:#2f64d6"></span>Move / resize</button>
       <label class="size" for="size">Size <input id="size" type="range" min="2" max="24" value="5"></label>
       <span class="sep"></span>
       <button class="btn" id="zout" type="button" aria-label="Zoom out">−</button>
@@ -663,11 +664,12 @@ dl.facts dd { margin: 0; }
   /* put every visible layer on the screen canvas (the old flat pictures use "multiply" so their white paper does not hide the layers below) */
   function paint(extra, all) {
     ctx = mctx; ctx.globalCompositeOperation = 'source-over'; ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, W, H);
-    layers.forEach(function (L) { if (!L.visible && !all) return; ctx.globalCompositeOperation = L.flat ? 'multiply' : 'source-over'; ctx.drawImage(L.cv, 0, 0); });
+    layers.forEach(function (L) { if (!L.visible && !all) return; ctx.globalCompositeOperation = L.flat ? 'multiply' : 'source-over'; if (xs && xs.L === L && !all) { ctx.save(); xformApply(ctx, xs); ctx.drawImage(xs.orig, 0, 0); ctx.restore(); } else ctx.drawImage(L.cv, 0, 0); });
     ctx.globalCompositeOperation = 'source-over';
     if (extra) drawOp(extra);
     if (pending) { drawOp(pending.op); drawHandle(); }
     if (poly) drawPolyPreview();
+    if (xs && !all) drawXformUI();
   }
   var paintQ = 0;
   function schedulePaint() { if (paintQ) return; paintQ = requestAnimationFrame(function () { paintQ = 0; paint(); }); }
@@ -766,13 +768,14 @@ dl.facts dd { margin: 0; }
   }
   function dropEmptyDefault() { layers = layers.filter(function (L) { return !(layerEmpty(L) && L.name === 'Layer 1' && L.component === 'other' && !L.panel); }); if (activeL && layers.indexOf(activeL) < 0) activeL = null; }
   function addOp(L, op, panel) {
-    L.ops.push(op); L.ver++; L.dirty = true; hist.push({ L: L, op: op, panel: panel || null }); redoH = []; updateButtons(); markDirty();
+    L.ops.push(op); L.ver++; L.dirty = true; hist.push({ L: L, op: op, panel: panel || null }); if (hist.length > 80) hist.shift(); redoH = []; updateButtons(); markDirty();
   }
   function undo() {
     if (poly) { polyUndo(); return; }
     if (pending) { cancelPending(); return; }
+    if (xs) { cancelXform(); return; }
     var e = hist.pop(); while (e && layers.indexOf(e.L) < 0) e = hist.pop(); if (!e) return;
-    var i = e.L.ops.lastIndexOf(e.op); if (i >= 0) e.L.ops.splice(i, 1);
+    if (e.xform) { e.L.base = e.xform.before.base; e.L.ops = e.xform.before.ops.slice(); } else { var i = e.L.ops.lastIndexOf(e.op); if (i >= 0) e.L.ops.splice(i, 1); }
     e.L.ver++; e.L.dirty = true; redrawLayer(e.L);
     if (e.panel) { panelsList = panelsList.filter(function (q) { return q !== e.panel; }); if (activePanel === e.panel.id) activePanel = null; if (layerEmpty(e.L)) { layers = layers.filter(function (x) { return x !== e.L; }); e.dropped = true; } }
     redoH.push(e); paint(); renderPanels(); renderLayers(); updateButtons(); markDirty();
@@ -780,7 +783,8 @@ dl.facts dd { margin: 0; }
   function redo() {
     if (pending) return; var e = redoH.pop(); while (e && !e.dropped && layers.indexOf(e.L) < 0) e = redoH.pop(); if (!e) return;
     if (e.dropped) { layers.push(e.L); e.dropped = false; }
-    e.L.ops.push(e.op); e.L.ver++; e.L.dirty = true; hist.push(e); redrawLayer(e.L);
+    if (e.xform) { e.L.base = e.xform.after.base; e.L.ops = []; } else e.L.ops.push(e.op);
+    e.L.ver++; e.L.dirty = true; hist.push(e); redrawLayer(e.L);
     if (e.panel) { panelsList.push(e.panel); activePanel = e.panel.id; }
     paint(); renderPanels(); renderLayers(); updateButtons(); markDirty();
   }
@@ -873,7 +877,7 @@ dl.facts dd { margin: 0; }
   function layerLive(L) { return !!L && layers.indexOf(L) >= 0; }
   function newLayerFromSelection() {
     if (layers.length >= MAX_LAYERS) { setStatus('One page can hold ' + MAX_LAYERS + ' layers. Reuse or delete one.'); return layerLive(activeL) ? activeL : layers[layers.length - 1]; }
-    dropEmptyDefault(); var isChar = curComponent === 'character' && curChar;
+    finishXform(); dropEmptyDefault(); var isChar = curComponent === 'character' && curChar;
     var L = newLayer({ component: curComponent, panel: activePanel, ref: isChar ? curChar.id : '', name: isChar ? curChar.name : autoName(curComponent) });
     layers.push(L); activeL = L; renderLayers(); renderCompbar(); markDirty(); return L;
   }
@@ -892,8 +896,8 @@ dl.facts dd { margin: 0; }
     renderCompbar(); renderLayers();
   }
   function selectLayer(L) {
-    commitPending(); activeL = L; activePanel = L.panel || null; curComponent = L.component; if (L.ref) curChar = { id: L.ref, name: L.name };
-    renderPanels(); renderCompbar(); renderLayers();
+    commitPending(); finishXform(); activeL = L; activePanel = L.panel || null; curComponent = L.component; if (L.ref) curChar = { id: L.ref, name: L.name };
+    renderPanels(); renderCompbar(); renderLayers(); if (tool === 'xform') xformEnter();
   }
   function onPanelSelected() {
     if (layerLive(activeL) && activeL.panel !== activePanel) {
@@ -904,7 +908,7 @@ dl.facts dd { margin: 0; }
   }
   function deleteLayer(L) {
     var i = layers.indexOf(L); if (i < 0) return;
-    layers.splice(i, 1); hist = hist.filter(function (e) { return e.L !== L; }); redoH = redoH.filter(function (e) { return e.L !== L; });
+    if (xs && xs.L === L) xs = null; layers.splice(i, 1); hist = hist.filter(function (e) { return e.L !== L; }); redoH = redoH.filter(function (e) { return e.L !== L; });
     if (activeL === L) activeL = layers[Math.max(0, i - 1)] || null;
     if (!layers.length) ensureLayer();
     paint(); markDirty(); renderLayers(); renderCompbar(); updateButtons();
@@ -1088,6 +1092,121 @@ dl.facts dd { margin: 0; }
   document.getElementById('polyundo').addEventListener('click', polyUndo);
   document.getElementById('polycancel').addEventListener('click', function () { cancelPoly(); });
 
+  /* ---------- zoom with two fingers (or ctrl + wheel / trackpad pinch) ---------- */
+  function capture(e) { try { cv.setPointerCapture(e.pointerId); } catch (err) {} }
+  var touches = {}, pinch = null;
+  function nTouch() { return Object.keys(touches).length; }
+  function startPinch() {
+    var ids = Object.keys(touches), a = touches[ids[0]], b = touches[ids[1]], r = cv.getBoundingClientRect();
+    pinch = { d0: Math.hypot(a.x - b.x, a.y - b.y) || 1, z0: zoom, px: ((a.x + b.x) / 2 - r.left) / zoom, py: ((a.y + b.y) / 2 - r.top) / zoom };
+  }
+  function doPinch() {
+    var ids = Object.keys(touches); if (ids.length < 2 || !pinch) return;
+    var a = touches[ids[0]], b = touches[ids[1]], mx = (a.x + b.x) / 2, my = (a.y + b.y) / 2, d = Math.hypot(a.x - b.x, a.y - b.y) || 1;
+    autoFit = false; zoom = Math.max(0.25, Math.min(3, pinch.z0 * d / pinch.d0)); applyZoom();
+    var r2 = cv.getBoundingClientRect(); scroller.scrollLeft += (r2.left + pinch.px * zoom) - mx; scroller.scrollTop += (r2.top + pinch.py * zoom) - my;
+  }
+  function dropActive() {
+    var a = active; active = null; if (!a) return;
+    if (a.t === 's' && a.L) redrawLayer(a.L);
+    if (a.t === 'xform' && xs) xs.T = a.T0;
+    paint();
+  }
+  scroller.addEventListener('wheel', function (e) {
+    if (!(e.ctrlKey || e.metaKey)) return; e.preventDefault();
+    var r = cv.getBoundingClientRect(), px = (e.clientX - r.left) / zoom, py = (e.clientY - r.top) / zoom;
+    autoFit = false; zoom = Math.max(0.25, Math.min(3, zoom * Math.exp(-e.deltaY * 0.01))); applyZoom();
+    var r2 = cv.getBoundingClientRect(); scroller.scrollLeft += (r2.left + px * zoom) - e.clientX; scroller.scrollTop += (r2.top + py * zoom) - e.clientY;
+  }, { passive: false });
+
+  /* ---------- move / resize / rotate the selected layer ----------
+     A session starts when you pick the tool (or select another layer): a box with handles appears around what is drawn on the layer.
+     Drag inside to move, corners resize keeping the shape, edge handles stretch, the round handle rotates. Tap outside the box, change tool or layer, or save to apply it. */
+  var xs = null;
+  var XH = [{ k: 'nw', hx: -1, hy: -1 }, { k: 'n', hx: 0, hy: -1 }, { k: 'ne', hx: 1, hy: -1 }, { k: 'e', hx: 1, hy: 0 }, { k: 'se', hx: 1, hy: 1 }, { k: 's', hx: 0, hy: 1 }, { k: 'sw', hx: -1, hy: 1 }, { k: 'w', hx: -1, hy: 0 }];
+  function layerBox(L) {
+    var c = L.cv, d = c.getContext('2d').getImageData(0, 0, c.width, c.height).data, minx = 1e9, miny = 1e9, maxx = -1, maxy = -1;
+    for (var y = 0; y < c.height; y++) for (var x = 0; x < c.width; x++) {
+      var i = (y * c.width + x) * 4, on = L.flat ? (d[i + 3] > 16 && (d[i] < 225 || d[i + 1] < 225 || d[i + 2] < 225)) : d[i + 3] > 16;
+      if (on) { if (x < minx) minx = x; if (x > maxx) maxx = x; if (y < miny) miny = y; if (y > maxy) maxy = y; }
+    }
+    return maxx < 0 ? null : { x: minx, y: miny, w: maxx - minx + 1, h: maxy - miny + 1 };
+  }
+  function xformStart(L) {
+    var bb = layerBox(L); if (!bb) { setStatus('There is nothing drawn on this layer yet.'); return false; }
+    var orig = mkCanvas(L.cv.height); orig.getContext('2d').drawImage(L.cv, 0, 0);
+    xs = { L: L, orig: orig, before: { base: L.base, ops: L.ops.slice() }, bb: bb, ox: bb.x + bb.w / 2, oy: bb.y + bb.h / 2, T: { cx: bb.x + bb.w / 2, cy: bb.y + bb.h / 2, sx: 1, sy: 1, th: 0 } };
+    return true;
+  }
+  function xformEnter() {
+    finishXform(); var L = layerLive(activeL) ? activeL : null;
+    if (!L) { setStatus('Pick a layer first.'); return; }
+    if (xformStart(L)) { setStatus('Move / resize: drag inside the box to move, corners to resize, edges to stretch, the round handle to rotate. Tap outside the box when you are done.'); paint(); }
+  }
+  function xToWorld(s, T, lx, ly) { var c = Math.cos(T.th), n = Math.sin(T.th); return [T.cx + lx * c - ly * n, T.cy + lx * n + ly * c]; }
+  function xHandlePos(s, T, h) {
+    var hw = s.bb.w / 2 * T.sx, hh = s.bb.h / 2 * T.sy;
+    if (h.k === 'rot') { var sc = W / (cv.getBoundingClientRect().width || W); return xToWorld(s, T, 0, -hh - 44 * sc); }
+    return xToWorld(s, T, h.hx * hw, h.hy * hh);
+  }
+  function xHit(p) {
+    var s = xs, T = s.T, R = 26 * W / (cv.getBoundingClientRect().width || W), best = null, bd = R;
+    var rp = xHandlePos(s, T, { k: 'rot' }); if (Math.hypot(p[0] - rp[0], p[1] - rp[1]) <= R) return { k: 'rot' };
+    XH.forEach(function (h) { var q = xHandlePos(s, T, h); var d = Math.hypot(p[0] - q[0], p[1] - q[1]); if (d <= bd) { bd = d; best = h; } });
+    if (best) return best;
+    var c = Math.cos(-T.th), n = Math.sin(-T.th), dx = p[0] - T.cx, dy = p[1] - T.cy, lx = dx * c - dy * n, ly = dx * n + dy * c;
+    if (Math.abs(lx) <= s.bb.w / 2 * T.sx && Math.abs(ly) <= s.bb.h / 2 * T.sy) return { k: 'move' };
+    return null;
+  }
+  function xformDown(e) {
+    var p = pt(e);
+    if (!xs) { xformEnter(); if (!xs) return; }
+    var h = xHit(p);
+    if (!h) { finishXform(); return; }
+    active = { t: 'xform', id: e.pointerId, h: h, p0: p, T0: { cx: xs.T.cx, cy: xs.T.cy, sx: xs.T.sx, sy: xs.T.sy, th: xs.T.th }, touch: e.pointerType === 'touch' };
+  }
+  function xformMove(e) {
+    var s = xs, a = active, p = pt(e), T0 = a.T0, T = { cx: T0.cx, cy: T0.cy, sx: T0.sx, sy: T0.sy, th: T0.th }, h = a.h;
+    if (h.k === 'move') { T.cx = T0.cx + (p[0] - a.p0[0]); T.cy = T0.cy + (p[1] - a.p0[1]); }
+    else if (h.k === 'rot') {
+      var th = Math.atan2(p[1] - T0.cy, p[0] - T0.cx) + Math.PI / 2, step = Math.PI / 2, near = Math.round(th / step) * step;
+      T.th = Math.abs(th - near) < 0.05 ? near : th;
+    } else {
+      var c = Math.cos(-T0.th), n = Math.sin(-T0.th), dx = p[0] - T0.cx, dy = p[1] - T0.cy, lx = dx * c - dy * n, ly = dx * n + dy * c;
+      var hw = s.bb.w / 2 * T0.sx, hh = s.bb.h / 2 * T0.sy, ox = -h.hx * hw, oy = -h.hy * hh, nw = 2 * hw, nh = 2 * hh, lcx = 0, lcy = 0;
+      if (h.hx && h.hy) {
+        var k = Math.max(Math.max(12, (lx - ox) * h.hx) / (2 * hw), Math.max(12, (ly - oy) * h.hy) / (2 * hh)); nw = 2 * hw * k; nh = 2 * hh * k;
+        lcx = ox + h.hx * nw / 2; lcy = oy + h.hy * nh / 2;
+      } else if (h.hx) { nw = Math.max(12, (lx - ox) * h.hx); lcx = ox + h.hx * nw / 2; lcy = 0; }
+      else { nh = Math.max(12, (ly - oy) * h.hy); lcx = 0; lcy = oy + h.hy * nh / 2; }
+      var wc = xToWorld(s, T0, lcx, lcy); T.cx = wc[0]; T.cy = wc[1]; T.sx = T0.sx * nw / (2 * hw); T.sy = T0.sy * nh / (2 * hh);
+    }
+    s.T = T; paint();
+  }
+  function xformApply(ctx2, s) { var T = s.T; ctx2.translate(T.cx, T.cy); ctx2.rotate(T.th); ctx2.scale(T.sx, T.sy); ctx2.translate(-s.ox, -s.oy); }
+  function drawXformUI() {
+    var s = xs, T = s.T, sc = W / (cv.getBoundingClientRect().width || W), hw = s.bb.w / 2 * T.sx, hh = s.bb.h / 2 * T.sy;
+    var corners = [[-hw, -hh], [hw, -hh], [hw, hh], [-hw, hh]].map(function (q) { return xToWorld(s, T, q[0], q[1]); });
+    ctx.save(); ctx.lineWidth = 2 * sc; ctx.strokeStyle = '#2f64d6'; ctx.setLineDash([8 * sc, 6 * sc]); ctx.beginPath();
+    corners.forEach(function (q, i) { if (i) ctx.lineTo(q[0], q[1]); else ctx.moveTo(q[0], q[1]); }); ctx.closePath(); ctx.stroke(); ctx.setLineDash([]);
+    var rp = xHandlePos(s, T, { k: 'rot' }), tp = xToWorld(s, T, 0, -hh); ctx.beginPath(); ctx.moveTo(tp[0], tp[1]); ctx.lineTo(rp[0], rp[1]); ctx.stroke();
+    ctx.beginPath(); ctx.arc(rp[0], rp[1], 10 * sc, 0, 6.2832); ctx.fillStyle = '#2f64d6'; ctx.fill(); ctx.strokeStyle = '#fff'; ctx.lineWidth = 2.5 * sc; ctx.stroke();
+    XH.forEach(function (h) { var q = xHandlePos(s, T, h), r = 8 * sc; ctx.fillStyle = '#fff'; ctx.strokeStyle = '#2f64d6'; ctx.lineWidth = 2.5 * sc; ctx.beginPath(); ctx.rect(q[0] - r, q[1] - r, 2 * r, 2 * r); ctx.fill(); ctx.stroke(); });
+    ctx.restore();
+  }
+  function xIsIdentity(s) { var T = s.T; return Math.abs(T.cx - s.ox) < 0.5 && Math.abs(T.cy - s.oy) < 0.5 && Math.abs(T.sx - 1) < 0.002 && Math.abs(T.sy - 1) < 0.002 && Math.abs(T.th) < 0.002; }
+  function cancelXform() { if (!xs) return; xs.T = { cx: xs.ox, cy: xs.oy, sx: 1, sy: 1, th: 0 }; xs = null; paint(); }
+  /* bake the move/resize into the layer's picture; one Undo step takes it back */
+  function finishXform() {
+    if (!xs) return; var s = xs; xs = null;
+    if (xIsIdentity(s)) { paint(); return; }
+    var L = s.L; if (layers.indexOf(L) < 0) { paint(); return; }
+    var nc = mkCanvas(L.cv.height), x = nc.getContext('2d'); x.imageSmoothingEnabled = true; x.imageSmoothingQuality = 'high'; x.save(); xformApply(x, s); x.drawImage(s.orig, 0, 0); x.restore();
+    L.base = nc; L.ops = []; L.ver++; L.dirty = true; redrawLayer(L);
+    hist.push({ L: L, op: { t: 'x' }, xform: { before: s.before, after: { base: nc } }, panel: null }); if (hist.length > 80) hist.shift(); redoH = [];
+    paint(); updateButtons(); markDirty(); setStatus('Layer moved. Undo takes it back.');
+  }
+
   /* ---------- drawing input ---------- */
   var active = null, panning = null;
   function pt(e) {
@@ -1096,19 +1215,24 @@ dl.facts dd { margin: 0; }
             e.pointerType === 'pen' && e.pressure > 0 ? e.pressure : 0.5];
   }
   cv.addEventListener('pointerdown', function (e) {
+    if (e.pointerType === 'touch') {
+      touches[e.pointerId] = { x: e.clientX, y: e.clientY };
+      if (nTouch() >= 2) { dropActive(); panning = null; capture(e); if (nTouch() === 2) startPinch(); return; }
+    }
     if (e.pointerType === 'touch' && (fingerPans || (active && active.touch))) {
       /* second finger while drawing: drop the unfinished stroke and scroll instead */
       if (active && active.touch) { var dropL = active.L; active = null; if (dropL) { redrawLayer(dropL); } paint(); }
       if (panning) return;
-      panning = { id: e.pointerId, x: e.clientX, y: e.clientY }; cv.setPointerCapture(e.pointerId); return;
+      panning = { id: e.pointerId, x: e.clientX, y: e.clientY }; capture(e); return;
     }
     if (!canDraw || active || (e.pointerType === 'mouse' && e.button !== 0)) return;
-    e.preventDefault(); cv.setPointerCapture(e.pointerId);
+    e.preventDefault(); capture(e);
     if (pending) {
       /* a curve is waiting for its bend: grab the dot, or finish the curve with a tap elsewhere */
       if (handleHit(pt(e))) active = { t: 'handle', id: e.pointerId, touch: e.pointerType === 'touch' }; else commitPending();
       return;
     }
+    if (tool === 'xform') { xformDown(e); return; }
     if (tool === 'panel') {
       var sp = snapPoint(pt(e)), c0 = [Math.round(sp.x), Math.round(sp.y)];
       if (!poly) poly = { pts: [c0], c: TOOLS.panel.color, w: Math.max(3, sizeVal() * 0.8), hover: null, snap: null };
@@ -1122,12 +1246,14 @@ dl.facts dd { margin: 0; }
     if (active) { active.touch = isTouch; active.L = L; }
   });
   cv.addEventListener('pointermove', function (e) {
+    if (e.pointerType === 'touch' && touches[e.pointerId]) { touches[e.pointerId].x = e.clientX; touches[e.pointerId].y = e.clientY; if (pinch) { doPinch(); return; } }
     if (panning && e.pointerId === panning.id) {
       scroller.scrollLeft -= e.clientX - panning.x; scroller.scrollTop -= e.clientY - panning.y;
       panning.x = e.clientX; panning.y = e.clientY; return;
     }
     if (!active || e.pointerId !== active.id) return;
     e.preventDefault();
+    if (active.t === 'xform') { xformMove(e); return; }
     if (active.t === 'poly') { var sp2 = snapPoint(pt(e)); if (poly) { poly.hover = [Math.round(sp2.x), Math.round(sp2.y)]; poly.snap = sp2.kind; } paint(); return; }
     if (active.t === 'handle') {
       var hp = pt(e), o = pending.op;
@@ -1147,10 +1273,12 @@ dl.facts dd { margin: 0; }
     onLayer(active.L, function () { drawStroke(active, from); }); schedulePaint();
   });
   function endPtr(e) {
+    if (e.pointerType === 'touch') { delete touches[e.pointerId]; if (pinch) { if (nTouch() < 2) pinch = null; return; } }
     if (panning && e.pointerId === panning.id) { panning = null; return; }
     if (!active || e.pointerId !== active.id) return;
     var op = active, L = op.L; active = null; delete op.L;
     if (op.t === 'handle') return;
+    if (op.t === 'xform') { paint(); return; }
     if (op.t === 'poly') { polyPlace(); return; }
     if (op.t === 'h' && Math.abs(op.x1 - op.x0) < 4 && Math.abs(op.y1 - op.y0) < 4) { paint(); return; }
     if (op.t === 'h' && (op.kind === 'curve' || op.kind === 'carrow')) { startPending(op, L); return; }
@@ -1169,8 +1297,8 @@ dl.facts dd { margin: 0; }
   /* ---------- toolbar ---------- */
   var shapeKind = 'rect', shapeColor = '#17181c', lineStyle = 'solid';
   function selectTool(t) {
-    commitPending(); if (poly && t !== 'panel') { if (poly.pts.length >= 3) closePoly(); else cancelPoly(true); }
-    tool = t; if (t === 'panel') setStatus('Drag one side at a time. Corners snap together; end on the blue ring (the first corner) to close the frame.');
+    commitPending(); if (t !== 'xform') finishXform(); if (poly && t !== 'panel') { if (poly.pts.length >= 3) closePoly(); else cancelPoly(true); }
+    tool = t; if (t === 'xform') xformEnter(); if (t === 'panel') setStatus('Drag one side at a time. Corners snap together; end on the blue ring (the first corner) to close the frame.');
     document.querySelectorAll('[data-tool]').forEach(function (b) { b.classList.toggle('on', b.dataset.tool === t); });
     document.getElementById('shapebar').hidden = t !== 'shape';
   }
@@ -1261,7 +1389,7 @@ dl.facts dd { margin: 0; }
   function blobOf(c) { return new Promise(function (r) { c.toBlob(r, 'image/png'); }); }
   function docAssetsOf(p) { return p.docAssets || (p.assetId ? [p.assetId] : []); }
   function flush() {
-    commitPending(); clearTimeout(saveTimer);
+    commitPending(); finishXform(); clearTimeout(saveTimer);
     return queue(function () {
       if (!dirty || !db || !assets) return;
       dirty = false;
@@ -1450,7 +1578,7 @@ dl.facts dd { margin: 0; }
   function disarm() { clearTimeout(delTimer); delBtn.classList.remove('armed'); delBtn.textContent = 'Delete page'; }
 
   document.getElementById('dl').addEventListener('click', function () {
-    commitPending(); paint(null, true); cv.toBlob(function (blob) { setTimeout(paint, 0);
+    commitPending(); finishXform(); paint(null, true); cv.toBlob(function (blob) { setTimeout(paint, 0);
       if (!blob) return;
       var a = document.createElement('a'); a.href = URL.createObjectURL(blob); a.download = 'page-' + String(cur + 1).padStart(3, '0') + '.png';
       document.body.appendChild(a); a.click(); a.remove(); setTimeout(function () { URL.revokeObjectURL(a.href); }, 4000);
