@@ -90,6 +90,7 @@ button { font: inherit; color: inherit; }
 .lread code { background: var(--bg); padding: 1px 5px; border-radius: 4px; }
 .lread hr { border: 0; border-top: 1px solid var(--line); }
 .lnone { color: var(--muted); padding: 24px 4px; }
+.lfilter { width: 100%; max-width: 420px; box-sizing: border-box; min-height: 44px; margin-bottom: 10px; border: 1px solid var(--line); border-radius: 8px; padding: 0 12px; background: var(--panel); color: inherit; font: inherit; font-size: 16px; }
 .grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 10px; padding-bottom: 12px; }
 .gi { position: relative; border: 1px solid var(--line); border-radius: 8px; background: var(--panel); padding: 0; cursor: pointer; aspect-ratio: 1; overflow: hidden; }
 .gi img { width: 100%; height: 100%; object-fit: cover; display: block; }
@@ -802,9 +803,29 @@ canvas { display: block; background: #fff; touch-action: none; box-shadow: 0 2px
   }
   function folderPath(names) { var p = Promise.resolve('root'); names.forEach(function (n) { p = p.then(function (par) { return ensureFolder(par, n); }); }); return p; }
   function listFiles(fid) {
-    var url = API + 'files?pageSize=200&orderBy=name&fields=files(id,name,mimeType,modifiedTime,thumbnailLink)&q=' + encodeURIComponent("'" + fid + "' in parents and trashed=false and mimeType!='" + FOLDER_MIME + "'");
-    return gfetch(url).then(function (r) { return r.json(); }).then(function (j) { return j.files || []; });
+    var base = API + 'files?pageSize=1000&orderBy=name&fields=nextPageToken,files(id,name,mimeType,modifiedTime,thumbnailLink)&q=' + encodeURIComponent("'" + fid + "' in parents and trashed=false and mimeType!='" + FOLDER_MIME + "'");
+    var all = [];
+    function page(tok) {
+      return gfetch(base + (tok ? '&pageToken=' + encodeURIComponent(tok) : '')).then(function (r) { return r.json(); }).then(function (j) {
+        all = all.concat(j.files || []); return j.nextPageToken ? page(j.nextPageToken) : all;
+      });
+    }
+    return page(null);
   }
+  /* thumbnails without a Drive preview are downloaded a few at a time, and only when scrolled into view */
+  var thumbQ = [], thumbBusy = 0;
+  function thumbPump() {
+    while (thumbBusy < 3 && thumbQ.length) {
+      (function (job) {
+        thumbBusy++;
+        gfetch(API + 'files/' + job.id + '?alt=media').then(function (r) { return r.blob(); }).then(function (b) { job.im.src = URL.createObjectURL(b); })
+          .catch(function () {}).then(function () { thumbBusy--; thumbPump(); });
+      })(thumbQ.shift());
+    }
+  }
+  var thumbObs = window.IntersectionObserver ? new IntersectionObserver(function (es) {
+    es.forEach(function (e) { if (e.isIntersecting) { thumbObs.unobserve(e.target); thumbQ.push(e.target.__job); thumbPump(); } });
+  }, { rootMargin: '300px' }) : null;
   function createFile(fid, name, mime, body) {
     var bd = 'mlb' + Date.now(), meta = JSON.stringify({ name: name, parents: [fid], mimeType: mime });
     var blob = new Blob(['--' + bd + '\r\nContent-Type: application/json; charset=UTF-8\r\n\r\n' + meta + '\r\n--' + bd + '\r\nContent-Type: ' + mime + '\r\n\r\n', body, '\r\n--' + bd + '--']);
@@ -941,17 +962,27 @@ canvas { display: block; background: #fff; touch-action: none; box-shadow: 0 2px
       });
     }
     function setThumb(im, f) {
-      function viaBlob() { gfetch(API + 'files/' + f.id + '?alt=media').then(function (r) { return r.blob(); }).then(function (b) { im.src = URL.createObjectURL(b); }).catch(function () {}); }
+      function viaBlob() { im.__job = { id: f.id, im: im }; if (thumbObs) thumbObs.observe(im); else { thumbQ.push(im.__job); thumbPump(); } }
       if (f.thumbnailLink) { im.onerror = function () { im.onerror = null; viaBlob(); }; im.src = f.thumbnailLink.replace(/=s\d+$/, '=s400'); } else viaBlob();
     }
+    var refFilter = '';
     function buildRefs() {
-      body.className = 'lbody refs'; body.style.display = ''; body.innerHTML = '<div class="grid"></div>';
-      var grid = body.firstChild;
-      files.forEach(function (f) {
+      body.className = 'lbody refs'; body.style.display = '';
+      body.innerHTML = '<input class="lfilter" type="search" placeholder="Filter by name, e.g. rey or expressions" aria-label="Filter images"><div class="grid"></div>';
+      var fin = body.firstChild, grid = body.lastChild; fin.value = refFilter;
+      fin.addEventListener('input', function () { refFilter = fin.value; fillGrid(); });
+      function fillGrid() {
+        grid.textContent = ''; var q = refFilter.trim().toLowerCase(), shown = 0;
+        files.forEach(function (f) { if (!q || f.name.toLowerCase().indexOf(q) >= 0) { grid.appendChild(cell(f)); shown++; } });
+        status(q ? shown + ' of ' + files.length + ' images' : files.length + (files.length === 1 ? ' file' : ' files'));
+      }
+      function cell(f) {
         var b = document.createElement('button'); b.type = 'button'; b.className = 'gi'; b.setAttribute('aria-label', f.name);
         var im = document.createElement('img'); im.alt = ''; im.loading = 'lazy'; var sp = document.createElement('span'); sp.textContent = f.name;
-        b.appendChild(im); b.appendChild(sp); setThumb(im, f); b.addEventListener('click', function () { openLightbox(f, load); }); grid.appendChild(b);
-      });
+        b.appendChild(im); b.appendChild(sp); setThumb(im, f); b.addEventListener('click', function () { openLightbox(f, load); });
+        return b;
+      }
+      fillGrid();
       if (!files.length) { var n = document.createElement('div'); n.className = 'lnone'; n.textContent = 'No reference images yet. Add some, or drop them in the references folder in Drive.'; body.appendChild(n); }
       newBtn.textContent = '+ Add images'; newBtn.onclick = function () { fileIn.click(); };
     }
@@ -972,7 +1003,7 @@ canvas { display: block; background: #fff; touch-action: none; box-shadow: 0 2px
       return folderPath(folderNames()).then(listFiles).then(function (list) {
         files = list.filter(mode === 'refs' ? isImage : isText);
         if (mode === 'refs') buildRefs(); else { cur = null; buildNotes(); }
-        status(files.length + (files.length === 1 ? ' file' : ' files'));
+        if (mode !== 'refs') status(files.length + (files.length === 1 ? ' file' : ' files'));
       }).catch(function (e) { fail(e, 'Could not load'); });
     }
     statEl.addEventListener('click', function () { if (statEl.classList.contains('err')) { if (dirty) save(); else load(); } });
