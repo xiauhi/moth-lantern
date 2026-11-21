@@ -182,6 +182,38 @@ dl.facts dd { margin: 0; }
 .thumb[aria-current="true"] { border-color: var(--accent); box-shadow: 0 0 0 2px var(--accent); }
 .thumb .tn { position: absolute; left: 4px; bottom: 4px; min-width: 22px; padding: 1px 6px; border-radius: 10px; background: rgba(20,22,26,.78); color: #fff; font-size: 12px; font-weight: 600; text-align: center; font-variant-numeric: tabular-nums; }
 .addpage { flex: none; min-height: 44px; justify-content: center; border-style: dashed; }
+.cvwrap { position: relative; width: max-content; }
+.guide { position: absolute; inset: 50px; border: 1.5px dashed rgba(70, 95, 150, .5); pointer-events: none; box-sizing: border-box; }
+.guide[hidden] { display: none; }
+.chapbtn { max-width: 260px; overflow: hidden; text-overflow: ellipsis; justify-content: center; flex: 0 1 auto; font-weight: 600; }
+.thumbwrap { position: relative; flex: none; }
+.thumbwrap .mv { position: absolute; right: 4px; width: 38px; height: 38px; min-height: 0; padding: 0; justify-content: center; border-radius: 19px; background: rgba(20,22,26,.85); color: #fff; border-color: rgba(255,255,255,.4); font-size: 16px; }
+.thumbwrap .mv.up { top: 4px; } .thumbwrap .mv.dn { bottom: 4px; }
+.thumbwrap .mv:disabled { opacity: .3; }
+.reorder-on { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+.pbtn .short { display: none; }
+@media (max-width: 720px) {
+  .pbtn .long { display: none; } .pbtn .short { display: inline; }
+  .thumbwrap { width: 64px; } .thumbwrap .mv { width: 28px; height: 28px; border-radius: 14px; font-size: 12px; right: 2px; } .thumbwrap .mv.up { top: 2px; } .thumbwrap .mv.dn { bottom: 2px; }
+}
+.xpanel { position: fixed; inset: 0; z-index: 15; background: rgba(8,9,11,.7); display: grid; place-items: center; padding: 14px; }
+.xpanel[hidden] { display: none; }
+.xcard { background: var(--panel); border: 1px solid var(--line); border-radius: 14px; width: min(720px, 100%); max-height: 88vh; display: flex; flex-direction: column; overflow: hidden; }
+.xhead { display: flex; align-items: center; gap: 10px; padding: 12px 14px; border-bottom: 1px solid var(--line); }
+.xhead b { flex: 1; font-family: var(--font-display); font-size: 17px; }
+.xbody { overflow: auto; padding: 12px 14px; display: grid; gap: 10px; align-content: start; }
+.xfoot { display: flex; flex-wrap: wrap; gap: 8px; padding: 12px 14px; border-top: 1px solid var(--line); }
+.xlist { display: grid; gap: 8px; }
+.xlist .btn { justify-content: space-between; width: 100%; }
+.xlist .btn small { color: var(--muted); font-size: 12px; }
+.xlist .btn.on { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+.xlist .btn.on small { color: inherit; opacity: .85; }
+.xsec h4 { font: 500 12px ui-monospace, Consolas, monospace; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); margin: 6px 0 8px; }
+.xgrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(120px, 1fr)); gap: 10px; }
+.xgrid .gi { position: relative; border: 1px solid var(--line); border-radius: 8px; background: #fff; padding: 0; cursor: pointer; aspect-ratio: 4 / 5; overflow: hidden; }
+.xgrid .gi img { width: 100%; height: 100%; object-fit: cover; object-position: top; display: block; }
+.xgrid .gi span { position: absolute; left: 0; right: 0; bottom: 0; padding: 2px 6px; background: rgba(20,22,26,.8); color: #fff; font-size: 11px; text-align: left; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.xnote { color: var(--muted); font-size: 13px; }
 .exportbtn { font-size: 13px; padding: 0 8px; margin-top: 4px; }
 .exportbtn .short { display: none; }
 @media (max-width: 720px) { .exportbtn .long { display: none; } .exportbtn .short { display: inline; } .exportbtn { margin-top: 0; } }
@@ -417,6 +449,7 @@ dl.facts dd { margin: 0; }
 
 <section class="view app" id="v-sketch" hidden>
   <header class="top">
+    <button class="btn chapbtn" id="chapbtn" type="button" aria-haspopup="dialog" title="Choose a chapter">Chapter 1 ▾</button>
     <button class="status" id="status" type="button">Loading…</button>
     <div class="actions">
       <button class="btn" id="undo" type="button" disabled>↩ Undo</button>
@@ -443,7 +476,8 @@ dl.facts dd { margin: 0; }
       <button class="btn" id="zfit" type="button">Fit</button>
       <button class="btn" id="zin" type="button" aria-label="Zoom in">+</button>
       <button class="btn" id="extend" type="button">Page +400 px</button>
-      <button class="btn" id="finger" type="button" aria-pressed="false">Hand: scroll</button>    </div>
+      <button class="btn" id="finger" type="button" aria-pressed="false">Hand: scroll</button>
+      <button class="btn" id="guidebtn" type="button" aria-pressed="true" title="Faint dashed margin line. It is only a guide: it is not saved into the page, and you can draw past it.">Guide</button>    </div>
     <div class="shapebar" id="shapebar" hidden>
       <div class="grp" id="shapes" role="group" aria-label="Shape"></div>
       <div class="grp" id="styles" role="group" aria-label="Line style">
@@ -461,7 +495,7 @@ dl.facts dd { margin: 0; }
     <div class="scroller" id="scroller">
       <div class="sheet">
         <p class="pagelabel" id="pagelabel"></p>
-        <canvas id="cv" width="800" height="1600"></canvas>
+        <div class="cvwrap"><canvas id="cv" width="800" height="1600"></canvas><div class="guide" id="guide" aria-hidden="true"></div></div>
       </div>
     </div>
     <div class="notes">
@@ -496,8 +530,24 @@ dl.facts dd { margin: 0; }
     { k: 'born', name: 'Born to be God', sub: 'Murim webtoon',             color: '#d6694a' }
   ];
   var allPages = [], proj = null, view = 'choose';
-  function pid(k, n) { return (k === 'tea' ? '' : k + '-') + 'p' + String(n).padStart(3, '0'); }
-  function inProject(k, id) { return k === 'tea' ? /^p\d+$/.test(id) : id.indexOf(k + '-p') === 0; }
+  /* page ids carry the project and chapter, so no database change is needed:
+     chapter 1 keeps the original ids (tea: p001; others: sage-p001), later chapters add c02- (tea: c02-p001, sage-c02-p001).
+     Chapter names live in one extra row per project (id tea-meta, sage-meta, ...). */
+  var chapter = 1;
+  function isMeta(id) { return /-meta$/.test(id); }
+  function pid(k, ch, n) { return (k === 'tea' ? '' : k + '-') + (ch > 1 ? 'c' + String(ch).padStart(2, '0') + '-' : '') + 'p' + String(n).padStart(3, '0'); }
+  function inProject(k, id) { if (isMeta(id)) return false; return k === 'tea' ? /^(c\d+-)?p\d+$/.test(id) : id.indexOf(k + '-') === 0 && /(^|-)p\d+$/.test(id); }
+  function chapOf(k, id) { var s = k === 'tea' ? id : id.slice(k.length + 1), m = /^c(\d+)-/.exec(s); return m ? +m[1] : 1; }
+  function numOf(id) { var m = /p(\d+)$/.exec(id); return m ? +m[1] : 0; }
+  function pagesOfChapter(k, ch) { return allPages.filter(function (p) { return inProject(k, p.id) && chapOf(k, p.id) === ch; }).sort(function (a, b) { return a.order - b.order; }); }
+  function metaRow(k) { for (var i = 0; i < allPages.length; i++) if (allPages[i].id === k + '-meta') return allPages[i]; return null; }
+  function getMeta(k) {
+    var r = metaRow(k), m = null; try { m = r && r.notes ? JSON.parse(r.notes) : null; } catch (e) { m = null; }
+    m = m || {}; m.list = (m.list || []).slice(); m.names = m.names || {};
+    allPages.forEach(function (p) { if (inProject(k, p.id)) { var c = chapOf(k, p.id); if (m.list.indexOf(c) < 0) m.list.push(c); } });
+    if (!m.list.length) m.list = [1]; m.list.sort(function (a, b) { return a - b; }); return m;
+  }
+  function chapterName(k, n, m) { m = m || getMeta(k); return 'Chapter ' + n + (m.names[n] ? ' · ' + m.names[n] : ''); }
   function projOf(k) { for (var i = 0; i < PROJECTS.length; i++) if (PROJECTS[i].k === k) return PROJECTS[i]; return null; }
   var base = null, ops = [], redoStack = [];
   var tool = 'pen', fingerPans = false, canDraw = false, zoom = 1, autoFit = true;
@@ -516,7 +566,7 @@ dl.facts dd { margin: 0; }
 
   /* ---------- canvas ---------- */
   function setCanvasHeight(h) { H = h; cv.width = W; cv.height = h; applyZoom(); }
-  function applyZoom() { cv.style.width = Math.round(W * zoom) + 'px'; cv.style.height = Math.round(H * zoom) + 'px'; }
+  function applyZoom() { cv.style.width = Math.round(W * zoom) + 'px'; cv.style.height = Math.round(H * zoom) + 'px'; if (typeof applyGuide === 'function') applyGuide(); }
   function fit() { zoom = Math.max(0.3, Math.min(2, (scroller.clientWidth - 32) / W)); applyZoom(); }
   function whiten() { ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, W, H); }
   function drawStroke(op, from) {
@@ -815,22 +865,44 @@ dl.facts dd { margin: 0; }
   window.addEventListener('pagehide', function () { if (dirty) flush(); });
 
   /* ---------- pages ---------- */
+  var reorderMode = false;
   function renderThumbs() {
     var box = document.getElementById('pages'); box.textContent = '';
     pages.forEach(function (p, i) {
+      var wrap = document.createElement('div'); wrap.className = 'thumbwrap';
       var b = document.createElement('button'); b.className = 'thumb'; b.type = 'button';
       b.setAttribute('aria-label', 'Page ' + (i + 1)); if (i === cur) b.setAttribute('aria-current', 'true');
       var src = p.thumb || '';
       if (src) { var im = document.createElement('img'); im.alt = ''; im.src = src; b.appendChild(im); }
       var n = document.createElement('span'); n.className = 'tn'; n.textContent = String(i + 1); b.appendChild(n);
-      b.addEventListener('click', function () { if (i !== cur) openPage(i); });
-      box.appendChild(b);
+      b.addEventListener('click', function () { if (!reorderMode && i !== cur) openPage(i); });
+      wrap.appendChild(b);
+      if (reorderMode) {
+        var up = document.createElement('button'); up.type = 'button'; up.className = 'btn mv up'; up.textContent = narrowLayout() ? '◀' : '▲'; up.setAttribute('aria-label', 'Move page ' + (i + 1) + ' earlier'); up.disabled = i === 0;
+        var dn = document.createElement('button'); dn.type = 'button'; dn.className = 'btn mv dn'; dn.textContent = narrowLayout() ? '▶' : '▼'; dn.setAttribute('aria-label', 'Move page ' + (i + 1) + ' later'); dn.disabled = i === pages.length - 1;
+        up.addEventListener('click', function () { movePage(i, -1); }); dn.addEventListener('click', function () { movePage(i, 1); });
+        wrap.appendChild(up); wrap.appendChild(dn);
+      }
+      box.appendChild(wrap);
     });
+    function pbtn(id, long, short, title) {
+      var x = document.createElement('button'); x.className = 'btn addpage pbtn exportbtn'; x.type = 'button'; x.id = id; x.title = title;
+      x.innerHTML = '<span class="long">' + long + '</span><span class="short">' + short + '</span>'; box.appendChild(x); return x;
+    }
     var add = document.createElement('button'); add.className = 'btn addpage'; add.type = 'button'; add.textContent = '+ Page';
     add.addEventListener('click', addPage); box.appendChild(add);
-    var ex = document.createElement('button'); ex.className = 'btn addpage exportbtn'; ex.type = 'button'; ex.id = 'exportbtn';
-    ex.title = 'Copies your pages into your Drive folder so Claude can read them';
-    ex.innerHTML = '<span class="long">↑ Export to Drive</span><span class="short">↑ Drive</span>'; box.appendChild(ex);
+    var rb = pbtn('reorderbtn', reorderMode ? 'Done' : '⇅ Reorder', reorderMode ? 'Done' : '⇅', 'Move pages earlier or later in this chapter');
+    if (reorderMode) rb.classList.add('reorder-on');
+    pbtn('exportbtn', '↑ Export to Drive', '↑ Drive', 'Copies your pages into your Drive folder so Claude can read them');
+    pbtn('viewbtn', '▤ Exported pages', '▤', 'See the pages already copied to your Drive folder, chapter by chapter');
+  }
+  function narrowLayout() { return window.matchMedia && window.matchMedia('(max-width: 720px)').matches; }
+  /* move a page one step earlier (-1) or later (+1) inside its chapter, then renumber the chapter */
+  function movePage(i, d) {
+    var j = i + d; if (j < 0 || j >= pages.length) return;
+    var moving = pages[cur], t = pages[i]; pages[i] = pages[j]; pages[j] = t;
+    pages.forEach(function (p, k) { if (p.order !== k + 1) { p.order = k + 1; (function (pp) { queue(function () { return writeDoc(pp); }); })(p); } });
+    cur = pages.indexOf(moving); renderThumbs(); updateButtons(); scheduleExport();
   }
   function openPage(i) {
     var token = ++openToken;
@@ -899,8 +971,9 @@ dl.facts dd { margin: 0; }
   }
   function addPage() {
     flush().then(function () {
-      var order = pages.reduce(function (m, p) { return Math.max(m, p.order); }, 0) + 1;
-      var p = { id: pid(proj, order), order: order, assetId: null, height: DEFAULT_H, notes: '' };
+      var inCh = pagesOfChapter(proj, chapter), n = inCh.reduce(function (mx, p) { return Math.max(mx, numOf(p.id)); }, 0) + 1;
+      var order = pages.reduce(function (mx, p) { return Math.max(mx, p.order); }, 0) + 1;
+      var p = { id: pid(proj, chapter, n), order: order, assetId: null, height: DEFAULT_H, notes: '' };
       pages.push(p); allPages.push(p); queue(function () { return writeDoc(p); });
       openPage(pages.length - 1).then(function () { scroller.scrollTop = 0; });
     });
@@ -920,7 +993,7 @@ dl.facts dd { margin: 0; }
       return Promise.all(jobs);
     });
     pages.splice(cur, 1); allPages.splice(allPages.indexOf(p), 1);
-    if (!pages.length) { var np = { id: pid(proj, 1), order: 1, assetId: null, height: DEFAULT_H, notes: '' }; pages.push(np); allPages.push(np); queue(function () { return writeDoc(np); }); }
+    if (!pages.length) { var np = { id: pid(proj, chapter, 1), order: 1, assetId: null, height: DEFAULT_H, notes: '' }; pages.push(np); allPages.push(np); queue(function () { return writeDoc(np); }); }
     openPage(Math.min(cur, pages.length - 1));
   });
   function disarm() { clearTimeout(delTimer); delBtn.classList.remove('armed'); delBtn.textContent = 'Delete page'; }
@@ -959,10 +1032,8 @@ dl.facts dd { margin: 0; }
     });
   }
   function selectProject(k) {
-    proj = k; pages = allPages.filter(function (p) { return inProject(k, p.id); }).sort(function (a, b) { return a.order - b.order; });
-    if (!pages.length) { var p = { id: pid(k, 1), order: 1, assetId: null, height: DEFAULT_H, notes: '' }; pages.push(p); allPages.push(p); queue(function () { return writeDoc(p); }); }
-    cur = -1; ops = []; redoStack = []; base = null; canDraw = false; dirty = false;
-    return openPage(0).then(function () { if (!statusEl.classList.contains('err')) setStatus(db && assets ? 'Ready. Saves automatically.' : 'Saving is off here. Use Save PNG.'); });
+    proj = k; var m = getMeta(k), want = 1; try { want = +localStorage.getItem('ml-chap-' + k) || 1; } catch (e) {}
+    return loadChapter(m.list.indexOf(want) >= 0 ? want : m.list[0]);
   }
   /* open a project (or just switch section inside it). Never leaves a page whose drawing failed to save. */
   function openProject(k, v) {
@@ -1067,7 +1138,7 @@ dl.facts dd { margin: 0; }
   }
   function folderPath(names) { var p = Promise.resolve('root'); names.forEach(function (n) { p = p.then(function (par) { return ensureFolder(par, n); }); }); return p; }
   function listFiles(fid) {
-    var base = API + 'files?pageSize=1000&orderBy=name&fields=nextPageToken,files(id,name,mimeType,modifiedTime,thumbnailLink)&q=' + encodeURIComponent("'" + fid + "' in parents and trashed=false and mimeType!='" + FOLDER_MIME + "'");
+    var base = API + 'files?pageSize=1000&orderBy=name&fields=nextPageToken,files(id,name,mimeType,modifiedTime,thumbnailLink,parents)&q=' + encodeURIComponent("'" + fid + "' in parents and trashed=false and mimeType!='" + FOLDER_MIME + "'");
     var all = [];
     function page(tok) {
       return gfetch(base + (tok ? '&pageToken=' + encodeURIComponent(tok) : '')).then(function (r) { return r.json(); }).then(function (j) {
@@ -1075,6 +1146,10 @@ dl.facts dd { margin: 0; }
       });
     }
     return page(null);
+  }
+  function listChildFolders(fid) {
+    var url = API + 'files?pageSize=200&orderBy=name&fields=files(id,name)&q=' + encodeURIComponent("'" + fid + "' in parents and trashed=false and mimeType='" + FOLDER_MIME + "'");
+    return gfetch(url).then(function (r) { return r.json(); }).then(function (j) { return j.files || []; });
   }
   /* thumbnails without a Drive preview are downloaded a few at a time, and only when scrolled into view */
   var thumbQ = [], thumbBusy = 0;
@@ -2007,52 +2082,187 @@ dl.facts dd { margin: 0; }
     connBtn.addEventListener('click', function () { status('Signing in…'); gConnect().then(show).catch(function (e) { renderConnect('Sign-in did not finish (' + msgOf(e) + '). Tap Connect to try again.'); }); });
     return { show: show, flush: flushPage };
   }
-  /* ---------- copy the sketch pages into Drive (moth-lantern/<project>/sketches) so Claude can read them from the synced folder ----------
-     One PNG per page (file name = page id), pages.md with the notes, _state.json so only changed pages are copied again. The real pages stay in Supabase. */
+  /* ---------- chapters: pick which chapter's pages the sketchbook shows ---------- */
+  function updateChapterBtn() { var b = document.getElementById('chapbtn'); if (b && proj) b.textContent = chapterName(proj, chapter) + ' ▾'; }
+  function saveMeta(k, m) {
+    var r = metaRow(k); if (!r) { r = { id: k + '-meta', order: 0, assetId: null, height: DEFAULT_H, notes: '' }; allPages.push(r); }
+    r.notes = JSON.stringify({ v: 1, list: m.list, names: m.names }); queue(function () { return writeDoc(r); });
+  }
+  function loadChapter(ch) {
+    chapter = ch; try { localStorage.setItem('ml-chap-' + proj, String(ch)); } catch (e) {}
+    pages = pagesOfChapter(proj, ch);
+    if (!pages.length) { var p = { id: pid(proj, ch, 1), order: 1, assetId: null, height: DEFAULT_H, notes: '' }; pages.push(p); allPages.push(p); queue(function () { return writeDoc(p); }); }
+    cur = -1; ops = []; redoStack = []; base = null; canDraw = false; dirty = false; pending = null; reorderMode = false; updateChapterBtn();
+    return openPage(0).then(function () { if (!statusEl.classList.contains('err')) setStatus(db && assets ? 'Ready. Saves automatically.' : 'Saving is off here. Use Save PNG.'); });
+  }
+  function openChapter(ch) {
+    return flush().then(function () { if (dirty || ch === chapter) return; cacheLeaving(); return loadChapter(ch); });
+  }
+  function closeX(el) { if (el && el.parentNode) el.parentNode.removeChild(el); }
+  function openPanel(title) {
+    var o = document.createElement('div'); o.className = 'xpanel'; o.setAttribute('role', 'dialog'); o.setAttribute('aria-label', title);
+    o.innerHTML = '<div class="xcard"><div class="xhead"><b></b><button class="btn" type="button" data-x="close">Close</button></div><div class="xbody"></div><div class="xfoot" hidden></div></div>';
+    o.querySelector('b').textContent = title;
+    o.addEventListener('click', function (e) { if (e.target === o || (e.target.closest && e.target.closest('[data-x=close]'))) closeX(o); });
+    document.body.appendChild(o); return o;
+  }
+  document.addEventListener('keydown', function (e) {
+    if (e.key !== 'Escape' || (lbEl && !lbEl.hidden)) return;
+    var ps = document.querySelectorAll('.xpanel'); if (ps.length) closeX(ps[ps.length - 1]);
+  });
+  function showChapters() {
+    flush().then(function () {
+      if (dirty || !proj) return;
+      var m = getMeta(proj), o = openPanel('Chapters · ' + projOf(proj).name), body = o.querySelector('.xbody'), foot = o.querySelector('.xfoot'); foot.hidden = false;
+      var list = mk('div', 'xlist');
+      m.list.forEach(function (n) {
+        var all = pagesOfChapter(proj, n), drawn = all.filter(function (p) { return p.assetId; }).length;
+        var b = mk('button', 'btn' + (n === chapter ? ' on' : '')); b.type = 'button';
+        b.append(mk('span', '', chapterName(proj, n, m)), mk('small', '', all.length + (all.length === 1 ? ' page' : ' pages') + (drawn ? '' : ' · empty')));
+        b.addEventListener('click', function () { closeX(o); openChapter(n); }); list.appendChild(b);
+      });
+      body.appendChild(list);
+      var nw = bt('+ New chapter', 'btn'), rn = bt('Rename this chapter', 'btn'), dl = bt('Delete this chapter', 'btn danger');
+      var chPages = pagesOfChapter(proj, chapter), blank = chPages.every(function (p) { return !p.assetId; });
+      dl.disabled = !(m.list.length > 1 && blank); dl.title = dl.disabled ? 'Only an empty chapter can be deleted (and you need at least one chapter)' : '';
+      nw.onclick = function () { var n = m.list[m.list.length - 1] + 1; m.list.push(n); saveMeta(proj, m); closeX(o); openChapter(n); };
+      rn.onclick = function () {
+        var name = prompt('Name for ' + chapterName(proj, chapter, m) + ' (leave empty for no name)', m.names[chapter] || ''); if (name === null) return;
+        name = name.trim(); if (name) m.names[chapter] = name; else delete m.names[chapter];
+        saveMeta(proj, m); updateChapterBtn(); closeX(o); scheduleExport();
+      };
+      dl.onclick = function () {
+        if (!dl.classList.contains('armed')) { dl.classList.add('armed'); dl.textContent = 'Tap again to delete'; setTimeout(function () { dl.classList.remove('armed'); dl.textContent = 'Delete this chapter'; }, 3500); return; }
+        var n = chapter; pagesOfChapter(proj, n).forEach(function (p) { allPages.splice(allPages.indexOf(p), 1); queue(function () { return db ? db.doc('pages/' + p.id).delete() : null; }); });
+        m.list = m.list.filter(function (x) { return x !== n; }); delete m.names[n]; saveMeta(proj, m);
+        pages = []; cur = -1; dirty = false; pending = null; ops = []; closeX(o); loadChapter(m.list[0]);
+      };
+      foot.append(nw, rn, dl);
+    });
+  }
+  document.getElementById('chapbtn').addEventListener('click', showChapters);
+
+  /* ---------- copy the sketch pages into Drive, one folder per chapter, files in story order ----------
+     moth-lantern/<project>/sketches/Chapter 01 - Name/001_p001.png ... plus pages.md (notes) and _state.json (so only changed pages are copied again).
+     The real pages stay in Supabase. */
   var exporting = false, exportTimer = null;
+  function pad(n, w) { return String(n).padStart(w, '0'); }
+  function safeName(s) { return String(s).replace(/[\\/:*?"<>|]+/g, ' ').replace(/\s+/g, ' ').trim().slice(0, 50); }
   function patchFile(f, body, mime) { return gfetch(UP + 'files/' + f.id + '?uploadType=media&fields=id', { method: 'PATCH', headers: { 'Content-Type': mime }, body: body }); }
+  function patchMeta(id, fields, qs) { return gfetch(API + 'files/' + id + '?fields=id' + (qs || ''), { method: 'PATCH', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(fields) }); }
   function scheduleExport() { clearTimeout(exportTimer); if (gHave()) exportTimer = setTimeout(function () { exportSketches(false); }, 20000); }
+  function chapterFolder(root, folders, n, fname) {
+    var re = new RegExp('^Chapter 0*' + n + '(?!\\d)'), f = folders.filter(function (x) { return re.test(x.name); })[0];
+    if (f) { if (f.name === fname) return Promise.resolve(f.id); return patchMeta(f.id, { name: fname }).then(function () { f.name = fname; return f.id; }); }
+    return gfetch(API + 'files?fields=id', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ name: fname, mimeType: FOLDER_MIME, parents: [root] }) })
+      .then(function (r) { return r.json(); }).then(function (j) { folders.push({ id: j.id, name: fname }); return j.id; });
+  }
   function exportSketches(manual) {
     if (exporting || !db || !assets || !gHave() || !proj) return Promise.resolve(false);
-    exporting = true; var pj = proj, list = pages.slice(), done = 0;
+    exporting = true; var pj = proj, done = 0, m = getMeta(pj);
+    var chapters = m.list.map(function (n) { return { n: n, pages: pagesOfChapter(pj, n) }; });
     function say(t) { if (manual) setStatus(t); }
     say('Exporting pages to Drive…');
-    return folderPath([DRIVE_ROOT, pj, 'sketches']).then(function (fid) {
-      return listFiles(fid).then(function (files) {
-        var by = {}, st = {}; files.forEach(function (f) { by[f.name] = f; });
-        var loadState = by['_state.json'] ? readDoc(by['_state.json']).then(function (t) { try { st = JSON.parse(t) || {}; } catch (e) { st = {}; } }) : Promise.resolve();
-        return loadState.then(function () {
-          var seq = Promise.resolve();
-          list.forEach(function (p) {
-            if (!p.assetId || st[p.id] === p.assetId) return;
-            seq = seq.then(function () {
-              return assets.download(p.assetId).then(function (blob) {
-                var name = p.id + '.png', old = by[name];
-                return (old ? patchFile(old, blob, 'image/png') : createFile(fid, name, 'image/png', blob)).then(function () { st[p.id] = p.assetId; done++; say('Exporting… ' + done); });
+    return folderPath([DRIVE_ROOT, pj, 'sketches']).then(function (root) {
+      return Promise.all([listFiles(root), listChildFolders(root)]).then(function (a) {
+        var rootFiles = a[0], folders = a[1], st = {}, byId = {}, all = rootFiles.map(function (f) { f._folder = root; return f; });
+        return Promise.all(folders.map(function (fo) { return listFiles(fo.id).then(function (fs) { fs.forEach(function (f) { f._folder = fo.id; }); return fs; }); })).then(function (lists) {
+          lists.forEach(function (l) { all = all.concat(l); });
+          all.forEach(function (f) { var mm = /^(?:\d+_)?(.+)\.png$/.exec(f.name); if (mm) byId[mm[1]] = f; });
+          var stFile = rootFiles.filter(function (f) { return f.name === '_state.json'; })[0], mdFile = rootFiles.filter(function (f) { return f.name === 'pages.md'; })[0];
+          var loadSt = stFile ? readDoc(stFile).then(function (t) { try { st = JSON.parse(t) || {}; } catch (e) { st = {}; } }) : Promise.resolve();
+          return loadSt.then(function () {
+            var seq = Promise.resolve(), md = ['# ' + projOf(pj).name + ': sketchbook pages', '', 'Copied from the moth-lantern sketchbook on ' + new Date().toISOString().slice(0, 16).replace('T', ' ') + ' UTC. One folder per chapter; files are numbered in story order (001_..., 002_...). This is a read-only copy: the real pages live in the app.'];
+            chapters.forEach(function (c) {
+              var fname = 'Chapter ' + pad(c.n, 2) + (m.names[c.n] ? ' - ' + safeName(m.names[c.n]) : '');
+              md.push('', '## ' + fname + ' (' + c.pages.length + (c.pages.length === 1 ? ' page)' : ' pages)'), '');
+              seq = seq.then(function () { return chapterFolder(root, folders, c.n, fname); }).then(function (fid) {
+                var s2 = Promise.resolve();
+                c.pages.forEach(function (p, i) {
+                  var want = pad(i + 1, 3) + '_' + p.id + '.png', old = byId[p.id];
+                  md.push('### Page ' + (i + 1) + ' · ' + (p.assetId ? want : 'blank, not exported'), '', (p.notes || '').trim() || '(no notes)', '');
+                  if (!p.assetId) return;
+                  s2 = s2.then(function () {
+                    var need = !old || st[p.id] !== p.assetId;
+                    var step = need ? assets.download(p.assetId).then(function (blob) {
+                      if (old) return patchFile(old, blob, 'image/png');
+                      return createFile(fid, want, 'image/png', blob).then(function (nf) { nf._folder = fid; old = nf; byId[p.id] = nf; });
+                    }) : Promise.resolve();
+                    return step.then(function () {
+                      if (need) { st[p.id] = p.assetId; done++; say('Exporting… ' + done); }
+                      if (old.name !== want || old._folder !== fid) {
+                        var qs = old._folder !== fid ? '&addParents=' + fid + '&removeParents=' + old._folder : '';
+                        return patchMeta(old.id, { name: want }, qs).then(function () { old.name = want; old._folder = fid; });
+                      }
+                    });
+                  });
+                });
+                return s2;
               });
             });
-          });
-          return seq.then(function () {
-            var keep = {}; list.forEach(function (p) { keep[p.id] = 1; });
-            Object.keys(st).forEach(function (id) { if (!keep[id]) { delete st[id]; if (by[id + '.png']) trashFile(by[id + '.png'].id).catch(function () {}); } });
-            var md = ['# ' + projOf(pj).name + ': sketchbook pages', '', 'Copied from the moth-lantern sketchbook on ' + new Date().toISOString().slice(0, 16).replace('T', ' ') + ' UTC. One image per page (the file name is the page id) and the page notes. This is a read-only copy: the real pages live in the app.', ''];
-            list.forEach(function (p, i) { md.push('## Page ' + (i + 1) + ' · ' + p.id + '.png' + (p.assetId ? '' : ' (blank)'), '', (p.notes || '').trim() || '(no notes)', ''); });
-            function put(name, body, mime) { var o = by[name]; return o ? patchFile(o, body, mime) : createFile(fid, name, mime, body); }
-            return put('pages.md', md.join('\n'), 'text/markdown').then(function () { return put('_state.json', JSON.stringify(st), 'application/json'); });
+            return seq.then(function () {
+              var keep = {}; allPages.forEach(function (p) { if (inProject(pj, p.id)) keep[p.id] = 1; });
+              Object.keys(st).forEach(function (id) { if (!keep[id]) { delete st[id]; if (byId[id]) trashFile(byId[id].id).catch(function () {}); } });
+              function put(name, ex, body, mime) { return ex ? patchFile(ex, body, mime) : createFile(root, name, mime, body); }
+              return put('pages.md', mdFile, md.join('\n'), 'text/markdown').then(function () { return put('_state.json', stFile, JSON.stringify(st), 'application/json'); });
+            });
           });
         });
       });
     }).then(function () { exporting = false; say(done ? 'Exported ' + done + ' page' + (done === 1 ? '' : 's') + ' to Drive.' : 'Drive copy is up to date.'); return true; })
       .catch(function (e) { exporting = false; say('Export failed (' + String(e && e.message || e).slice(0, 40) + ').'); return false; });
   }
+
+  /* ---------- look at what has already been copied to Drive, chapter by chapter ---------- */
+  function showExported() {
+    var o = openPanel('Exported pages · ' + projOf(proj).name), body = o.querySelector('.xbody'), pj = proj;
+    function note(t) { body.textContent = ''; body.appendChild(mk('div', 'xnote', t)); }
+    function isPng(f) { return /\.png$/i.test(f.name); }
+    function go() {
+      note('Loading…');
+      folderPath([DRIVE_ROOT, pj, 'sketches']).then(function (root) {
+        return Promise.all([listFiles(root), listChildFolders(root)]).then(function (a) {
+          return Promise.all(a[1].map(function (fo) { return listFiles(fo.id).then(function (fs) { return { title: fo.name, files: fs.filter(isPng) }; }); })).then(function (groups) {
+            var loose = a[0].filter(isPng); if (loose.length) groups.push({ title: 'Not sorted into a chapter yet', files: loose });
+            groups = groups.filter(function (g) { return g.files.length; });
+            if (!groups.length) { note('Nothing has been exported yet. Tap ↑ Export to Drive first.'); return; }
+            body.textContent = '';
+            groups.forEach(function (g) {
+              var sec = mk('div', 'xsec'), grid = mk('div', 'xgrid'), items = g.files.map(function (f) { return { label: g.title + ' · ' + f.name, f: f }; });
+              sec.appendChild(mk('h4', '', g.title + ' · ' + g.files.length + (g.files.length === 1 ? ' page' : ' pages')));
+              g.files.forEach(function (f, i) {
+                var b = mk('button', 'gi'); b.type = 'button'; b.setAttribute('aria-label', 'Open ' + f.name);
+                var im = document.createElement('img'); im.alt = ''; im.loading = 'lazy'; b.appendChild(im); thumbInto(im, f, 300); b.appendChild(mk('span', '', f.name.replace(/\.png$/i, '')));
+                b.addEventListener('click', function () { openGallery(items, i); }); grid.appendChild(b);
+              });
+              sec.appendChild(grid); body.appendChild(sec);
+            });
+          });
+        });
+      }).catch(function (e) { note('Could not load (' + String(e && e.message || e).slice(0, 40) + ').'); });
+    }
+    if (gHave()) go();
+    else { note('Connect Google Drive to see the exported pages.'); var cb = bt('Connect Google Drive', 'btn'); body.appendChild(cb); cb.onclick = function () { gConnect().then(go).catch(function () { note('Sign-in did not finish. Close this and try again.'); }); }; }
+  }
+
+  /* ---------- page strip buttons: reorder, export, exported pages ---------- */
   document.getElementById('pages').addEventListener('click', function (e) {
-    if (!e.target.closest || !e.target.closest('#exportbtn')) return;
+    var t = e.target.closest ? e.target.closest('#exportbtn, #viewbtn, #reorderbtn') : null; if (!t) return;
+    if (t.id === 'reorderbtn') { reorderMode = !reorderMode; renderThumbs(); return; }
+    if (t.id === 'viewbtn') { flush().then(function () { showExported(); }); return; }
     flush().then(function () {
       if (gHave()) return exportSketches(true);
       setStatus('Signing in to Google…');
       return gConnect().then(function () { return exportSketches(true); }).catch(function () { setStatus('Drive sign-in did not finish.'); });
     });
   });
+
+  /* ---------- margin guide: faint dashed line, only on screen (never saved into the page) ---------- */
+  var guideEl = document.getElementById('guide'), guideBtn = document.getElementById('guidebtn'), GUIDE_M = 50, guideOn = true;
+  try { guideOn = localStorage.getItem('ml-guide') !== '0'; } catch (e) {}
+  function applyGuide() { if (!guideEl) return; guideEl.hidden = !guideOn; guideEl.style.inset = Math.round(GUIDE_M * zoom) + 'px'; guideBtn.setAttribute('aria-pressed', String(guideOn)); }
+  guideBtn.addEventListener('click', function () { guideOn = !guideOn; try { localStorage.setItem('ml-guide', guideOn ? '1' : '0'); } catch (e) {} applyGuide(); });
+  applyGuide();
 
   libs.notebook = makeHub(document.getElementById('v-notebook'), 'notebook');
   libs.bible = makeHub(document.getElementById('v-bible'), 'bible');
