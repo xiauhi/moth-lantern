@@ -441,6 +441,7 @@ dl.facts dd { margin: 0; }
       <button class="btn" id="zin" type="button" aria-label="Zoom in">+</button>
       <button class="btn" id="extend" type="button">Page +400 px</button>
       <button class="btn" id="finger" type="button" aria-pressed="false">Hand: scroll</button>
+      <button class="btn" id="exportbtn" type="button" title="Copies your pages into your Drive folder so Claude can read them">Export to Drive</button>
     </div>
     <div class="shapebar" id="shapebar" hidden>
       <div class="grp" id="shapes" role="group" aria-label="Shape"></div>
@@ -764,7 +765,7 @@ dl.facts dd { margin: 0; }
   notesEl.addEventListener('input', function () {
     var p = pages[cur]; if (!p) return; p.notes = notesEl.value;
     clearTimeout(notesTimer); setStatus('Unsaved');
-    notesTimer = setTimeout(function () { queue(function () { return writeDoc(p).then(function () { setStatus('Saved ' + clock()); }); }); }, 900);
+    notesTimer = setTimeout(function () { queue(function () { return writeDoc(p).then(function () { setStatus('Saved ' + clock()); scheduleExport(); }); }); }, 900);
   });
 
   /* ---------- saving ---------- */
@@ -801,7 +802,7 @@ dl.facts dd { margin: 0; }
         var old = p.assetId; p.assetId = up.id; p.height = h; p.updatedAt = new Date().toISOString(); p.thumb = thumb;
         return writeDoc(p).then(function () {
           if (old && old !== up.id) assets.delete(old).catch(function () {});
-          renderThumbs(); setStatus('Saved ' + clock());
+          renderThumbs(); setStatus('Saved ' + clock()); scheduleExport();
         });
       });
     });
@@ -2002,6 +2003,52 @@ dl.facts dd { margin: 0; }
     connBtn.addEventListener('click', function () { status('Signing in…'); gConnect().then(show).catch(function (e) { renderConnect('Sign-in did not finish (' + msgOf(e) + '). Tap Connect to try again.'); }); });
     return { show: show, flush: flushPage };
   }
+  /* ---------- copy the sketch pages into Drive (moth-lantern/<project>/sketches) so Claude can read them from the synced folder ----------
+     One PNG per page (file name = page id), pages.md with the notes, _state.json so only changed pages are copied again. The real pages stay in Supabase. */
+  var exporting = false, exportTimer = null;
+  function patchFile(f, body, mime) { return gfetch(UP + 'files/' + f.id + '?uploadType=media&fields=id', { method: 'PATCH', headers: { 'Content-Type': mime }, body: body }); }
+  function scheduleExport() { clearTimeout(exportTimer); if (gHave()) exportTimer = setTimeout(function () { exportSketches(false); }, 20000); }
+  function exportSketches(manual) {
+    if (exporting || !db || !assets || !gHave() || !proj) return Promise.resolve(false);
+    exporting = true; var pj = proj, list = pages.slice(), done = 0;
+    function say(t) { if (manual) setStatus(t); }
+    say('Exporting pages to Drive…');
+    return folderPath([DRIVE_ROOT, pj, 'sketches']).then(function (fid) {
+      return listFiles(fid).then(function (files) {
+        var by = {}, st = {}; files.forEach(function (f) { by[f.name] = f; });
+        var loadState = by['_state.json'] ? readDoc(by['_state.json']).then(function (t) { try { st = JSON.parse(t) || {}; } catch (e) { st = {}; } }) : Promise.resolve();
+        return loadState.then(function () {
+          var seq = Promise.resolve();
+          list.forEach(function (p) {
+            if (!p.assetId || st[p.id] === p.assetId) return;
+            seq = seq.then(function () {
+              return assets.download(p.assetId).then(function (blob) {
+                var name = p.id + '.png', old = by[name];
+                return (old ? patchFile(old, blob, 'image/png') : createFile(fid, name, 'image/png', blob)).then(function () { st[p.id] = p.assetId; done++; say('Exporting… ' + done); });
+              });
+            });
+          });
+          return seq.then(function () {
+            var keep = {}; list.forEach(function (p) { keep[p.id] = 1; });
+            Object.keys(st).forEach(function (id) { if (!keep[id]) { delete st[id]; if (by[id + '.png']) trashFile(by[id + '.png'].id).catch(function () {}); } });
+            var md = ['# ' + projOf(pj).name + ': sketchbook pages', '', 'Copied from the moth-lantern sketchbook on ' + new Date().toISOString().slice(0, 16).replace('T', ' ') + ' UTC. One image per page (the file name is the page id) and the page notes. This is a read-only copy: the real pages live in the app.', ''];
+            list.forEach(function (p, i) { md.push('## Page ' + (i + 1) + ' · ' + p.id + '.png' + (p.assetId ? '' : ' (blank)'), '', (p.notes || '').trim() || '(no notes)', ''); });
+            function put(name, body, mime) { var o = by[name]; return o ? patchFile(o, body, mime) : createFile(fid, name, mime, body); }
+            return put('pages.md', md.join('\n'), 'text/markdown').then(function () { return put('_state.json', JSON.stringify(st), 'application/json'); });
+          });
+        });
+      });
+    }).then(function () { exporting = false; say(done ? 'Exported ' + done + ' page' + (done === 1 ? '' : 's') + ' to Drive.' : 'Drive copy is up to date.'); return true; })
+      .catch(function (e) { exporting = false; say('Export failed (' + String(e && e.message || e).slice(0, 40) + ').'); return false; });
+  }
+  document.getElementById('exportbtn').addEventListener('click', function () {
+    flush().then(function () {
+      if (gHave()) return exportSketches(true);
+      setStatus('Signing in to Google…');
+      return gConnect().then(function () { return exportSketches(true); }).catch(function () { setStatus('Drive sign-in did not finish.'); });
+    });
+  });
+
   libs.notebook = makeHub(document.getElementById('v-notebook'), 'notebook');
   libs.bible = makeHub(document.getElementById('v-bible'), 'bible');
   window.addEventListener('pagehide', function () { Object.keys(libs).forEach(function (k) { libs[k].flush(); }); });
