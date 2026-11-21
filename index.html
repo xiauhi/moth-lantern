@@ -183,10 +183,16 @@ dl.facts dd { margin: 0; }
 .thumb .tn { position: absolute; left: 4px; bottom: 4px; min-width: 22px; padding: 1px 6px; border-radius: 10px; background: rgba(20,22,26,.78); color: #fff; font-size: 12px; font-weight: 600; text-align: center; font-variant-numeric: tabular-nums; }
 .addpage { flex: none; min-height: 44px; justify-content: center; border-style: dashed; }
 .pnlayer { position: absolute; inset: 0; pointer-events: none; }
-.pnl { position: absolute; box-sizing: border-box; }
-.pnl.on { outline: 2px solid #2f64d6; outline-offset: -1px; background: rgba(47, 100, 214, .06); }
-.pnl-tag { position: absolute; left: 6px; top: 6px; pointer-events: auto; min-height: 30px; padding: 0 11px; border-radius: 15px; font-size: 12px; font-weight: 600; border: 1px solid rgba(255,255,255,.5); background: rgba(20,22,26,.78); color: #fff; cursor: pointer; }
-.pnl.on .pnl-tag { background: #2f64d6; }
+.pnsvg { position: absolute; left: 0; top: 0; pointer-events: none; overflow: visible; }
+.pnpoly { fill: transparent; stroke: none; }
+.pnpoly.on { fill: rgba(47, 100, 214, .07); stroke: #2f64d6; stroke-width: 2px; vector-effect: non-scaling-stroke; }
+.pnl-tag { position: absolute; pointer-events: auto; min-height: 30px; padding: 0 11px; border-radius: 15px; font-size: 12px; font-weight: 600; border: 1px solid rgba(255,255,255,.5); background: rgba(20,22,26,.78); color: #fff; cursor: pointer; }
+.pnl-tag.on { background: #2f64d6; }
+.polybar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 6px 10px; border: 1px solid #2f64d6; border-radius: 10px; background: color-mix(in srgb, #2f64d6 10%, var(--panel)); flex: none; }
+.polybar[hidden] { display: none; }
+.polybar span { font-weight: 600; margin-right: auto; }
+.polybar .btn { min-height: 38px; padding: 0 14px; }
+.hbtn { flex: none; }
 .pcard { display: grid; gap: 8px; padding: 12px; border: 1px solid var(--line); border-radius: 10px; background: var(--bg); }
 .pcard.on { border-color: var(--accent); }
 .pcard input, .pcard textarea { width: 100%; box-sizing: border-box; border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; background: var(--panel); color: inherit; font: inherit; font-size: 16px; }
@@ -500,6 +506,8 @@ dl.facts dd { margin: 0; }
 <section class="view app" id="v-sketch" hidden>
   <header class="top">
     <button class="btn chapbtn" id="chapbtn" type="button" aria-haspopup="dialog" title="Choose a chapter">Chapter 1 ▾</button>
+    <button class="btn hbtn" id="layersbtn" type="button" aria-pressed="false" title="Layers: what each thing is and what is in front of what">Layers</button>
+    <button class="btn hbtn" id="panelsbtn" type="button" title="Names and notes for the panels on this page">Panels</button>
     <button class="status" id="status" type="button">Loading…</button>
     <div class="actions">
       <button class="btn" id="undo" type="button" disabled>↩ Undo</button>
@@ -527,10 +535,11 @@ dl.facts dd { margin: 0; }
       <button class="btn" id="zin" type="button" aria-label="Zoom in">+</button>
       <button class="btn" id="extend" type="button">Page +400 px</button>
       <button class="btn" id="finger" type="button" aria-pressed="false">Hand: scroll</button>
-      <button class="btn" id="layersbtn" type="button" aria-pressed="false" title="Layers: what each thing is and what is in front of what">Layers</button>
-      <button class="btn" id="panelsbtn" type="button" title="Names and notes for the panels on this page">Panels</button>
+      
+      
       <button class="btn" id="clipbtn" type="button" aria-pressed="false" title="When on, your pen only draws inside the selected panel">Clip to panel</button>
       <button class="btn" id="guidebtn" type="button" aria-pressed="true" title="Faint dashed margin line. It is only a guide: it is not saved into the page, and you can draw past it.">Guide</button>    </div>
+    <div class="polybar" id="polybar" hidden><span id="polyinfo">0 corners</span><button class="btn" id="polyclose" type="button">Close frame</button><button class="btn" id="polyundo" type="button">Undo corner</button><button class="btn" id="polycancel" type="button">Cancel</button></div>
     <div class="compbar" id="compbar" aria-label="What you are drawing"></div>
     <div class="shapebar" id="shapebar" hidden>
       <div class="grp" id="shapes" role="group" aria-label="Shape"></div>
@@ -658,10 +667,15 @@ dl.facts dd { margin: 0; }
     ctx.globalCompositeOperation = 'source-over';
     if (extra) drawOp(extra);
     if (pending) { drawOp(pending.op); drawHandle(); }
+    if (poly) drawPolyPreview();
   }
   var paintQ = 0;
   function schedulePaint() { if (paintQ) return; paintQ = requestAnimationFrame(function () { paintQ = 0; paint(); }); }
-  function applyClip(op) { if (op.clip) { ctx.beginPath(); ctx.rect(op.clip[0], op.clip[1], op.clip[2], op.clip[3]); ctx.clip(); } }
+  function applyClip(op) {
+    var c = op.clip; if (!c) return; ctx.beginPath();
+    if (typeof c[0] === 'number') ctx.rect(c[0], c[1], c[2], c[3]); else { c.forEach(function (q, i) { if (i) ctx.lineTo(q[0], q[1]); else ctx.moveTo(q[0], q[1]); }); ctx.closePath(); }
+    ctx.clip();
+  }
   function drawStroke(op, from) {
     var p = op.pts; ctx.save(); applyClip(op);
     if (op.erase) { ctx.globalCompositeOperation = 'destination-out'; ctx.strokeStyle = '#000'; ctx.fillStyle = '#000'; } else { ctx.strokeStyle = op.c; ctx.fillStyle = op.c; }
@@ -740,10 +754,11 @@ dl.facts dd { margin: 0; }
   function drawOp(op) {
     if (op.t === 'h') drawShape(op);
     else if (op.t === 's') drawStroke(op, 1);
+    else if (op.t === 'poly') drawPolyOp(op);
   }
 
   /* ---------- the document: layers, panels, history ---------- */
-  function docFresh() { layers = []; panelsList = []; activeL = null; activePanel = null; hist = []; redoH = []; pending = null; }
+  function docFresh() { layers = []; panelsList = []; activeL = null; activePanel = null; hist = []; redoH = []; pending = null; poly = null; }
   function ensureLayer() {
     if (!activeL || layers.indexOf(activeL) < 0) activeL = layers[layers.length - 1] || null;
     if (!activeL) { activeL = newLayer({ name: 'Layer 1' }); layers.push(activeL); }
@@ -754,6 +769,7 @@ dl.facts dd { margin: 0; }
     L.ops.push(op); L.ver++; L.dirty = true; hist.push({ L: L, op: op, panel: panel || null }); redoH = []; updateButtons(); markDirty();
   }
   function undo() {
+    if (poly) { polyUndo(); return; }
     if (pending) { cancelPending(); return; }
     var e = hist.pop(); while (e && layers.indexOf(e.L) < 0) e = hist.pop(); if (!e) return;
     var i = e.L.ops.lastIndexOf(e.op); if (i >= 0) e.L.ops.splice(i, 1);
@@ -800,26 +816,31 @@ dl.facts dd { margin: 0; }
   /* ---------- panels: drawn with the Panel frame tool, then named ---------- */
   var pnLayer = document.getElementById('pnlayer');
   function panelById(id) { for (var i = 0; i < panelsList.length; i++) if (panelsList[i].id === id) return panelsList[i]; return null; }
-  function addPanel(op) {
+  function addPanelPts(pts) {
     var n = panelsList.reduce(function (m, q) { var k = /(\d+)$/.exec(q.name); return Math.max(m, k ? +k[1] : 0); }, 0) + 1;
-    var pn = { id: 'pn' + (++pidSeq), name: 'Panel ' + n, x: Math.round(Math.min(op.x0, op.x1)), y: Math.round(Math.min(op.y0, op.y1)), w: Math.round(Math.abs(op.x1 - op.x0)), h: Math.round(Math.abs(op.y1 - op.y0)), notes: '' };
+    var xs = pts.map(function (q) { return q[0]; }), ys = pts.map(function (q) { return q[1]; }), x0 = Math.min.apply(null, xs), y0 = Math.min.apply(null, ys);
+    var pn = { id: 'pn' + (++pidSeq), name: 'Panel ' + n, x: x0, y: y0, w: Math.max.apply(null, xs) - x0, h: Math.max.apply(null, ys) - y0, pts: pts, notes: '' };
     panelsList.push(pn); activePanel = pn.id; return pn;
   }
   function renderPanels() {
     if (!pnLayer) return; pnLayer.textContent = '';
+    var NS = 'http://www.w3.org/2000/svg', svg = document.createElementNS(NS, 'svg');
+    svg.setAttribute('viewBox', '0 0 ' + W + ' ' + H); svg.setAttribute('width', Math.round(W * zoom)); svg.setAttribute('height', Math.round(H * zoom)); svg.setAttribute('class', 'pnsvg'); pnLayer.appendChild(svg);
     panelsList.forEach(function (pn) {
-      var d = document.createElement('div'); d.className = 'pnl' + (pn.id === activePanel ? ' on' : '');
-      d.style.left = Math.round(pn.x * zoom) + 'px'; d.style.top = Math.round(pn.y * zoom) + 'px'; d.style.width = Math.round(pn.w * zoom) + 'px'; d.style.height = Math.round(pn.h * zoom) + 'px';
-      var t = document.createElement('button'); t.type = 'button'; t.className = 'pnl-tag'; t.textContent = pn.name;
+      var pts = panelPts(pn), pg = document.createElementNS(NS, 'polygon');
+      pg.setAttribute('points', pts.map(function (q) { return q[0] + ',' + q[1]; }).join(' ')); pg.setAttribute('class', 'pnpoly' + (pn.id === activePanel ? ' on' : '')); svg.appendChild(pg);
+      var top = pts.reduce(function (a, q) { return (q[1] < a[1] || (q[1] === a[1] && q[0] < a[0])) ? q : a; }, pts[0]);
+      var t = document.createElement('button'); t.type = 'button'; t.className = 'pnl-tag' + (pn.id === activePanel ? ' on' : ''); t.textContent = pn.name;
+      t.style.left = (Math.round(top[0] * zoom) + 6) + 'px'; t.style.top = (Math.round(top[1] * zoom) + 6) + 'px';
       t.addEventListener('click', function (e) { e.stopPropagation(); if (pn.id === activePanel) showPanelManager(pn.id); else { selectPanel(pn.id); } });
-      d.appendChild(t); pnLayer.appendChild(d);
+      pnLayer.appendChild(t);
     });
   }
   function selectPanel(id) { activePanel = id; renderPanels(); if (typeof onPanelSelected === 'function') onPanelSelected(); }
   function panelsChanged() { renderPanels(); markDirty(); }
   function showPanelManager(focusId) {
     var o = openPanel('Panels · page ' + (cur + 1)), body = o.querySelector('.xbody');
-    if (!panelsList.length) { body.appendChild(mk('div', 'xnote', 'No panels on this page yet. Pick the Panel frame tool and drag to draw one; it gets a name here that you can change.')); return; }
+    if (!panelsList.length) { body.appendChild(mk('div', 'xnote', 'No panels on this page yet. Pick the Panel frame tool and drag one side at a time; it gets a name here that you can change.')); return; }
     panelsList.forEach(function (pn) {
       var card = mk('div', 'pcard' + (pn.id === focusId ? ' on' : '')), name = document.createElement('input'), notes = document.createElement('textarea');
       name.type = 'text'; name.value = pn.name; name.setAttribute('aria-label', 'Panel name'); name.addEventListener('input', function () { pn.name = name.value.trim() || pn.name; panelsChanged(); });
@@ -837,7 +858,7 @@ dl.facts dd { margin: 0; }
   document.getElementById('panelsbtn').addEventListener('click', function () { showPanelManager(activePanel); });
   var clipBtn = document.getElementById('clipbtn');
   clipBtn.addEventListener('click', function () { clipOn = !clipOn; clipBtn.setAttribute('aria-pressed', String(clipOn)); setStatus(clipOn ? 'Drawing is kept inside the selected panel.' : 'Drawing is free again.'); });
-  function clipArg() { var pn = clipOn && activePanel ? panelById(activePanel) : null; return pn ? [pn.x, pn.y, pn.w, pn.h] : null; }
+  function clipArg() { var pn = clipOn && activePanel ? panelById(activePanel) : null; return pn ? panelPts(pn).map(function (q) { return [q[0], q[1]]; }) : null; }
 
   /* ---------- components + layers: what each thing is, which panel it is in, and what is in front of what ---------- */
   var COMPONENTS = [
@@ -1006,6 +1027,67 @@ dl.facts dd { margin: 0; }
   try { if (localStorage.getItem('ml-dock') === '1') setDock(true); } catch (e) {}
   renderCompbar();
 
+  /* ---------- freeform panel frames: drag one side after another. Corners snap to each other and to other panels; end on the first corner to close. ---------- */
+  var poly = null;
+  function panelPts(pn) { return pn.pts && pn.pts.length >= 3 ? pn.pts : [[pn.x, pn.y], [pn.x + pn.w, pn.y], [pn.x + pn.w, pn.y + pn.h], [pn.x, pn.y + pn.h]]; }
+  function snapR() { var r = cv.getBoundingClientRect(); return 28 * W / (r.width || W); }
+  function nearOnSeg(p, a, b) {
+    var dx = b[0] - a[0], dy = b[1] - a[1], l2 = dx * dx + dy * dy || 1, t = Math.max(0, Math.min(1, ((p[0] - a[0]) * dx + (p[1] - a[1]) * dy) / l2));
+    return [a[0] + t * dx, a[1] + t * dy];
+  }
+  function snapPoint(p) {
+    var R = snapR(), best = null, bd = 1e9, d, q, i;
+    if (poly && poly.pts.length >= 2) { d = Math.hypot(p[0] - poly.pts[0][0], p[1] - poly.pts[0][1]); if (d <= R * 1.3) return { x: poly.pts[0][0], y: poly.pts[0][1], kind: 'first' }; }
+    var verts = []; panelsList.forEach(function (pn) { panelPts(pn).forEach(function (v) { verts.push(v); }); }); if (poly) poly.pts.forEach(function (v) { verts.push(v); });
+    bd = R; verts.forEach(function (v) { d = Math.hypot(p[0] - v[0], p[1] - v[1]); if (d <= bd) { bd = d; best = { x: v[0], y: v[1], kind: 'corner' }; } });
+    if (best) return best;
+    bd = R * 0.7;
+    panelsList.forEach(function (pn) { var pts = panelPts(pn); for (i = 0; i < pts.length; i++) { q = nearOnSeg(p, pts[i], pts[(i + 1) % pts.length]); d = Math.hypot(p[0] - q[0], p[1] - q[1]); if (d <= bd) { bd = d; best = { x: q[0], y: q[1], kind: 'edge' }; } } });
+    if (best) return best;
+    if (poly && poly.pts.length) {
+      var l = poly.pts[poly.pts.length - 1], dx = p[0] - l[0], dy = p[1] - l[1], ang = Math.atan2(Math.abs(dy), Math.abs(dx)) * 180 / Math.PI;
+      if (Math.hypot(dx, dy) > R) { if (ang < 3) return { x: p[0], y: l[1], kind: 'axis' }; if (ang > 87) return { x: l[0], y: p[1], kind: 'axis' }; }
+    }
+    return { x: p[0], y: p[1], kind: null };
+  }
+  function drawPolyOp(op) {
+    ctx.save(); ctx.strokeStyle = op.c; ctx.lineWidth = op.w; ctx.lineJoin = 'round'; ctx.lineCap = 'round'; ctx.beginPath();
+    op.pts.forEach(function (q, i) { if (i) ctx.lineTo(q[0], q[1]); else ctx.moveTo(q[0], q[1]); }); ctx.closePath(); ctx.stroke(); ctx.restore();
+  }
+  function drawPolyPreview() {
+    var r = cv.getBoundingClientRect(), sc = W / (r.width || W), pts = poly.pts.slice(); if (poly.hover) pts.push(poly.hover);
+    ctx.save(); ctx.strokeStyle = poly.c; ctx.lineWidth = poly.w; ctx.lineJoin = 'round'; ctx.lineCap = 'round'; ctx.beginPath();
+    pts.forEach(function (q, i) { if (i) ctx.lineTo(q[0], q[1]); else ctx.moveTo(q[0], q[1]); }); ctx.stroke();
+    var f = poly.pts[0]; ctx.beginPath(); ctx.arc(f[0], f[1], 12 * sc, 0, 6.2832); ctx.lineWidth = 2.5 * sc; ctx.strokeStyle = poly.pts.length >= 3 ? '#2f64d6' : 'rgba(47,100,214,.55)'; ctx.stroke();
+    if (poly.hover && poly.snap) { ctx.beginPath(); ctx.arc(poly.hover[0], poly.hover[1], 9 * sc, 0, 6.2832); ctx.fillStyle = poly.snap === 'first' ? '#2f64d6' : 'rgba(47,160,100,.9)'; ctx.fill(); }
+    ctx.restore();
+  }
+  function polyBar() {
+    var b = document.getElementById('polybar'); if (!b) return; b.hidden = !poly;
+    if (poly) { document.getElementById('polyinfo').textContent = poly.pts.length + (poly.pts.length === 1 ? ' corner' : ' corners'); document.getElementById('polyclose').disabled = poly.pts.length < 3; }
+  }
+  function polyPlace() {
+    if (!poly || !poly.hover) return; var last = poly.pts[poly.pts.length - 1], end = poly.hover;
+    if (Math.hypot(end[0] - last[0], end[1] - last[1]) < 4) { paint(); return; }
+    if (poly.snap === 'first') { if (poly.pts.length >= 3) { closePoly(); return; } setStatus('A frame needs at least three corners.'); poly.hover = null; paint(); return; }
+    poly.pts.push(end); poly.hover = null; poly.snap = null; polyBar(); paint();
+    setStatus(poly.pts.length < 3 ? 'Drag to the next corner.' : 'Keep going, or end on the blue ring (first corner) to close the frame.');
+  }
+  function closePoly() {
+    if (!poly || poly.pts.length < 3) { cancelPoly(); return; }
+    var pts = poly.pts.map(function (q) { return [q[0], q[1]]; }), op = { t: 'poly', pts: pts, c: poly.c, w: poly.w };
+    poly = null; polyBar();
+    var pn = addPanelPts(pts); op.panelId = pn.id; dropEmptyDefault();
+    var L = newLayer({ component: 'border', panel: pn.id, name: pn.name + ' border' }); layers.push(L); activeL = null; curComponent = curComponent === 'border' ? 'other' : curComponent;
+    onLayer(L, function () { drawOp(op); }); addOp(L, op, pn); paint(); renderPanels(); renderLayers(); renderCompbar();
+    setStatus(pn.name + ' added. Tap its tag to rename it or add notes.');
+  }
+  function cancelPoly(quiet) { poly = null; polyBar(); paint(); if (!quiet) setStatus('Frame cancelled.'); }
+  function polyUndo() { if (!poly) return; poly.pts.pop(); poly.hover = null; if (!poly.pts.length) cancelPoly(true); else { polyBar(); paint(); } }
+  document.getElementById('polyclose').addEventListener('click', function () { closePoly(); });
+  document.getElementById('polyundo').addEventListener('click', polyUndo);
+  document.getElementById('polycancel').addEventListener('click', function () { cancelPoly(); });
+
   /* ---------- drawing input ---------- */
   var active = null, panning = null;
   function pt(e) {
@@ -1027,9 +1109,14 @@ dl.facts dd { margin: 0; }
       if (handleHit(pt(e))) active = { t: 'handle', id: e.pointerId, touch: e.pointerType === 'touch' }; else commitPending();
       return;
     }
-    var L = tool === 'panel' ? null : targetLayer(), T = TOOLS[tool], s = sizeVal(), p = pt(e), clip = clipArg();
+    if (tool === 'panel') {
+      var sp = snapPoint(pt(e)), c0 = [Math.round(sp.x), Math.round(sp.y)];
+      if (!poly) poly = { pts: [c0], c: TOOLS.panel.color, w: Math.max(3, sizeVal() * 0.8), hover: null, snap: null };
+      poly.hover = c0; poly.snap = sp.kind; active = { t: 'poly', id: e.pointerId, touch: e.pointerType === 'touch' }; polyBar(); paint(); return;
+    }
+    var L = targetLayer(), T = TOOLS[tool], s = sizeVal(), p = pt(e), clip = clipArg();
     var isTouch = e.pointerType === 'touch';
-    if (tool === 'panel') active = { t: 'h', kind: 'rect', c: T.color, w: Math.max(3, s * 0.8), ls: 'solid', x0: p[0], y0: p[1], x1: p[0], y1: p[1], id: e.pointerId, isPanel: true };
+    if (false) { }
     else if (tool === 'shape') active = { t: 'h', kind: shapeKind, c: shapeColor, w: Math.max(2, s), ls: lineStyle, x0: p[0], y0: p[1], x1: p[0], y1: p[1], id: e.pointerId, clip: clip };
     else { active = { t: 's', c: T.color, w: s * T.mul, press: T.press && e.pointerType === 'pen', erase: !!T.erase, clip: clip, pts: [p], id: e.pointerId }; onLayer(L, function () { drawStroke(active, 1); }); schedulePaint(); }
     if (active) { active.touch = isTouch; active.L = L; }
@@ -1041,6 +1128,7 @@ dl.facts dd { margin: 0; }
     }
     if (!active || e.pointerId !== active.id) return;
     e.preventDefault();
+    if (active.t === 'poly') { var sp2 = snapPoint(pt(e)); if (poly) { poly.hover = [Math.round(sp2.x), Math.round(sp2.y)]; poly.snap = sp2.kind; } paint(); return; }
     if (active.t === 'handle') {
       var hp = pt(e), o = pending.op;
       o.cx = 2 * hp[0] - 0.5 * (o.x0 + o.x1); o.cy = 2 * hp[1] - 0.5 * (o.y0 + o.y1); paint(); return;
@@ -1063,14 +1151,11 @@ dl.facts dd { margin: 0; }
     if (!active || e.pointerId !== active.id) return;
     var op = active, L = op.L; active = null; delete op.L;
     if (op.t === 'handle') return;
+    if (op.t === 'poly') { polyPlace(); return; }
     if (op.t === 'h' && Math.abs(op.x1 - op.x0) < 4 && Math.abs(op.y1 - op.y0) < 4) { paint(); return; }
     if (op.t === 'h' && (op.kind === 'curve' || op.kind === 'carrow')) { startPending(op, L); return; }
     if (op.t === 'h') {
       var pn = null;
-      if (op.isPanel) {
-        pn = addPanel(op); op.panelId = pn.id; delete op.isPanel; dropEmptyDefault();
-        L = newLayer({ component: 'border', panel: pn.id, name: pn.name + ' border' }); layers.push(L); activeL = null; curComponent = curComponent === 'border' ? 'other' : curComponent;
-      }
       onLayer(L, function () { drawOp(op); }); addOp(L, op, pn); paint();
       if (pn) { renderPanels(); renderLayers(); renderCompbar(); setStatus(pn.name + ' added. Tap its tag to rename it or add notes.'); }
       return;
@@ -1084,7 +1169,8 @@ dl.facts dd { margin: 0; }
   /* ---------- toolbar ---------- */
   var shapeKind = 'rect', shapeColor = '#17181c', lineStyle = 'solid';
   function selectTool(t) {
-    commitPending(); tool = t;
+    commitPending(); if (poly && t !== 'panel') { if (poly.pts.length >= 3) closePoly(); else cancelPoly(true); }
+    tool = t; if (t === 'panel') setStatus('Drag one side at a time. Corners snap together; end on the blue ring (the first corner) to close the frame.');
     document.querySelectorAll('[data-tool]').forEach(function (b) { b.classList.toggle('on', b.dataset.tool === t); });
     document.getElementById('shapebar').hidden = t !== 'shape';
   }
@@ -1306,7 +1392,7 @@ dl.facts dd { margin: 0; }
     setCanvasHeight(p.height || DEFAULT_H);
     notesEl.value = p.notes || ''; renderThumbs(); updateButtons(); scroller.scrollTop = 0;
     if (autoFit) fit();
-    function ready() { ensureLayer(); paint(); renderPanels(); canDraw = true; updateButtons(); renderLayers(); renderCompbar(); }
+    function ready() { ensureLayer(); paint(); renderPanels(); canDraw = true; updateButtons(); renderLayers(); renderCompbar(); polyBar(); }
     if (p.cache) {
       var c = p.cache; layers = c.layers; panelsList = c.panels; hist = c.hist; redoH = c.redoH; activePanel = c.activePanel;
       activeL = layers.filter(function (L) { return L.id === c.activeId; })[0] || null; if (c.h !== H) setCanvasHeight(c.h); ready(); return;
@@ -2551,8 +2637,10 @@ dl.facts dd { margin: 0; }
     return hx + ', ' + vy + ' (spans x ' + pc((b.x - ref.x) / ref.w) + '–' + pc((b.x + b.w - ref.x) / ref.w) + '%, y ' + pc((b.y - ref.y) / ref.h) + '–' + pc((b.y + b.h - ref.y) / ref.h) + '%)';
   }
   function canvasBlob(c) { return new Promise(function (r) { c.toBlob(r, 'image/png'); }); }
-  function cropBlob(im, x, y, w, h) {
-    var c = document.createElement('canvas'); c.width = Math.max(1, Math.round(w)); c.height = Math.max(1, Math.round(h)); var cx = c.getContext('2d'); cx.fillStyle = '#fff'; cx.fillRect(0, 0, c.width, c.height); cx.drawImage(im, x, y, w, h, 0, 0, c.width, c.height); return canvasBlob(c);
+  function cropBlob(im, x, y, w, h, pts) {
+    var c = document.createElement('canvas'); c.width = Math.max(1, Math.round(w)); c.height = Math.max(1, Math.round(h)); var cx = c.getContext('2d'); cx.fillStyle = '#fff'; cx.fillRect(0, 0, c.width, c.height);
+    if (pts && pts.length >= 3) { cx.beginPath(); pts.forEach(function (q, i) { if (i) cx.lineTo(q[0] - x, q[1] - y); else cx.moveTo(q[0] - x, q[1] - y); }); cx.closePath(); cx.clip(); }
+    cx.drawImage(im, x, y, w, h, 0, 0, c.width, c.height); return canvasBlob(c);
   }
   /* a colour-coded picture: every layer filled with its component colour, panels outlined and named */
   function mapBlob(items, mani) {
@@ -2576,7 +2664,8 @@ dl.facts dd { margin: 0; }
       var its = items.filter(function (it) { return (it.ml.panel || null) === g.id; });
       if (!g.pn && !its.length) return;
       if (g.pn) {
-        md.push('## ' + g.pn.name, '', 'Panel box on the page: x ' + g.pn.x + ', y ' + g.pn.y + ', ' + g.pn.w + ' × ' + g.pn.h + ' px. Crop: `' + (panelFiles[g.pn.id] || '') + '`.', '', 'Panel notes: ' + ((g.pn.notes || '').trim() || '(none)'), '');
+        var shape = g.pn.pts && g.pn.pts.length >= 3 ? 'Freeform frame with ' + g.pn.pts.length + ' corners: ' + g.pn.pts.map(function (q) { return '(' + q[0] + ',' + q[1] + ')'; }).join(' \u2192 ') + ' (back to the first). Bounding box: x ' + g.pn.x + ', y ' + g.pn.y + ', ' + g.pn.w + ' \u00d7 ' + g.pn.h + ' px.' : 'Panel box on the page: x ' + g.pn.x + ', y ' + g.pn.y + ', ' + g.pn.w + ' \u00d7 ' + g.pn.h + ' px.';
+        md.push('## ' + g.pn.name, '', shape + ' The crop shows only what is inside the frame, white outside: `' + (panelFiles[g.pn.id] || '') + '`.', '', 'Panel notes: ' + ((g.pn.notes || '').trim() || '(none)'), '');
       } else md.push('## Layers not in a panel', '');
       if (its.length) md.push('Back to front: ' + its.map(function (it) { return it.ml.name || compOf(it.ml.component).n; }).join(' → '), '');
       its.forEach(function (it) {
@@ -2612,13 +2701,13 @@ dl.facts dd { margin: 0; }
             items.forEach(function (it) { if (it.blob) seq = seq.then(function () { return createFile(lfid, it.fname, 'image/png', it.blob); }); });
             (mani.panels || []).forEach(function (pn, i) {
               var fname = (i + 1) + '_' + (slug(pn.name) || 'panel') + '.png'; panelFiles[pn.id] = 'panels/' + fname;
-              seq = seq.then(function () { return cropBlob(cr.im, pn.x, pn.y, pn.w, pn.h); }).then(function (b) { return createFile(pfid, fname, 'image/png', b); });
+              seq = seq.then(function () { return cropBlob(cr.im, pn.x, pn.y, pn.w, pn.h, panelPts(pn)); }).then(function (b) { return createFile(pfid, fname, 'image/png', b); });
             });
             seq = seq.then(function () { return mapBlob(items, mani); }).then(function (b) { return createFile(dfid, 'map.png', 'image/png', b); });
             seq = seq.then(function () { return createFile(dfid, 'page.md', 'text/markdown', pageDescription(p, pageNo, chapName, mani, items, panelFiles)); });
             seq = seq.then(function () {
               var json = { page: { id: p.id, number: pageNo, chapter: chapName, width: W, height: mani.height || DEFAULT_H, notes: p.notes || '' },
-                panels: (mani.panels || []).map(function (pn) { return { id: pn.id, name: pn.name, x: pn.x, y: pn.y, w: pn.w, h: pn.h, notes: pn.notes || '', crop: panelFiles[pn.id] || null }; }),
+                panels: (mani.panels || []).map(function (pn) { return { id: pn.id, name: pn.name, x: pn.x, y: pn.y, w: pn.w, h: pn.h, corners: pn.pts || null, notes: pn.notes || '', crop: panelFiles[pn.id] || null }; }),
                 layers: items.map(function (it, i) { return { order: i + 1, name: it.ml.name, component: it.ml.component, character: it.ml.ref || null, panel: it.ml.panel || null, description: it.ml.desc || '', file: it.blob ? 'layers/' + it.fname : null, bbox: it.bbox || null }; }) };
               return createFile(dfid, 'page.json', 'application/json', JSON.stringify(json, null, 1));
             });
