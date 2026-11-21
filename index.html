@@ -258,6 +258,34 @@ dl.facts dd { margin: 0; }
 .pbtn { }
 .dd .sw { box-shadow: 0 0 0 1.5px rgba(255,255,255,.55); }
 .compbar select { max-width: 150px; }
+.scriptpage { max-width: 760px; }
+.scripttop { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+.scriptbody { display: grid; gap: 16px; }
+.scene { display: grid; gap: 10px; padding: 14px; border: 1px solid var(--line); border-left: 4px solid var(--pa, var(--accent)); border-radius: 12px; background: var(--panel); }
+.scenehead { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.scenehead .sctitle { flex: 1; min-width: 160px; }
+.scriptpage input, .scriptpage textarea { width: 100%; box-sizing: border-box; background: var(--bg); color: var(--fg); border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; font: 15px/1.45 var(--font-body); }
+.scriptpage textarea { resize: none; overflow: hidden; min-height: 44px; }
+.scriptpage select { min-height: 44px; }
+.scriptpage .sq { min-width: 44px; padding: 0; justify-content: center; }
+.sp { border: 1px solid var(--line); border-radius: 10px; background: color-mix(in srgb, var(--bg) 60%, var(--panel)); }
+.sp > summary { display: flex; align-items: center; gap: 10px; min-height: 48px; padding: 0 12px; cursor: pointer; list-style: none; }
+.sp > summary::-webkit-details-marker { display: none; }
+.sp > summary::before { content: '▸'; color: var(--muted); }
+.sp[open] > summary::before { content: '▾'; }
+.sp .cnt { margin-left: auto; color: var(--muted); font-size: 13px; }
+.spin { display: grid; gap: 10px; padding: 4px 12px 12px; }
+.sl { display: grid; gap: 6px; padding: 8px; border: 1px solid var(--line); border-radius: 8px; background: var(--panel); }
+.slrow { display: flex; gap: 6px; flex-wrap: wrap; align-items: center; }
+.slrow select { flex: 1; min-width: 120px; }
+.scriptpage .acts { display: flex; gap: 8px; flex-wrap: wrap; }
+.scrh { font: 600 12px ui-monospace, Consolas, monospace; text-transform: uppercase; letter-spacing: .08em; color: var(--muted); margin: 14px 0 6px; }
+.scrp { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; margin-bottom: 6px; }
+.scrp b { flex: 1; min-width: 90px; }
+.scrl { display: flex; gap: 8px; align-items: center; padding: 6px 0; border-top: 1px solid var(--line); }
+.scrt { font-size: 11px; color: var(--muted); min-width: 74px; }
+.scrx { flex: 1; min-width: 0; overflow-wrap: anywhere; }
+.scrok { color: #3f9b72; font-weight: 700; }
 .cvwrap { position: relative; width: max-content; }
 .guide { position: absolute; inset: 50px; border: 1.5px dashed rgba(70, 95, 150, .5); pointer-events: none; box-sizing: border-box; }
 .guide[hidden] { display: none; }
@@ -509,6 +537,7 @@ dl.facts dd { margin: 0; }
   <nav class="tabs" id="tabs" aria-label="Sections" hidden>
     <button class="btn tab" data-view="notebook" type="button">Notebook</button>
     <button class="btn tab" data-view="bible" type="button">Bible</button>
+    <button class="btn tab" data-view="script" type="button">Script</button>
     <button class="btn tab" data-view="sketch" type="button">Sketchbook</button>
   </nav>
   <button class="btn gap" id="signout" type="button">Sign out</button>
@@ -522,12 +551,14 @@ dl.facts dd { margin: 0; }
 
 <section class="view lib" id="v-notebook" hidden></section>
 <section class="view lib" id="v-bible" hidden></section>
+<section class="view lib" id="v-script" hidden></section>
 
 <section class="view app" id="v-sketch" hidden>
   <header class="top">
     <button class="btn chapbtn" id="chapbtn" type="button" aria-haspopup="dialog" title="Choose a chapter">Chapter 1 ▾</button>
     <button class="btn hbtn" id="layersbtn" type="button" aria-pressed="false" title="Layers: what each thing is and what is in front of what">Layers</button>
     <button class="btn hbtn" id="panelsbtn" type="button" title="Names and notes for the panels on this page">Panels</button>
+    <button class="btn hbtn" id="scriptbtn" type="button" title="The story script for this chapter: link its panels to the ones you drew and place the dialogue">Script</button>
     <button class="status" id="status" type="button">Loading…</button>
     <div class="actions">
       <button class="btn" id="undo" type="button" disabled>↩ Undo</button>
@@ -647,7 +678,7 @@ dl.facts dd { margin: 0; }
   function chapterName(k, n, m) { m = m || getMeta(k); return 'Chapter ' + n + (m.names[n] ? ' · ' + m.names[n] : ''); }
   function projOf(k) { for (var i = 0; i < PROJECTS.length; i++) if (PROJECTS[i].k === k) return PROJECTS[i]; return null; }
   /* ---------- a page is a small document: panels + layers (back to front). Each layer is its own transparent canvas. ---------- */
-  var MAX_LAYERS = 12;
+  var MAX_LAYERS = 20;
   var mctx = ctx;
   var layers = [], panelsList = [], activeL = null, activePanel = null, hist = [], redoH = [], lidSeq = 0, pidSeq = 0, pending = null;
   var tool = 'pen', fingerPans = false, canDraw = false, zoom = 1, autoFit = true, clipOn = false;
@@ -669,7 +700,7 @@ dl.facts dd { margin: 0; }
   function newLayer(o) {
     o = o || {};
     var L = { id: o.id || 'ly' + (++lidSeq), panel: o.panel || null, component: o.component || 'other', ref: o.ref || '', name: o.name || '', desc: o.desc || '', visible: o.visible !== false,
-      asset: o.asset || null, flat: !!o.flat, base: o.base || null, ops: [], dirty: !!o.dirty, ver: 0 };
+      asset: o.asset || null, flat: !!o.flat, base: o.base || null, ops: [], dirty: !!o.dirty, ver: 0, line: o.line || null, lineInfo: o.lineInfo || null };
     L.cv = mkCanvas(); L.cx = L.cv.getContext('2d'); return L;
   }
   function setCanvasHeight(h) {
@@ -785,6 +816,7 @@ dl.facts dd { margin: 0; }
     if (op.t === 'h') drawShape(op);
     else if (op.t === 's') drawStroke(op, 1);
     else if (op.t === 'poly') drawPolyOp(op);
+    else if (op.t === 'b') drawBubble(op);
   }
 
   /* ---------- the document: layers, panels, history ---------- */
@@ -888,6 +920,117 @@ dl.facts dd { margin: 0; }
     });
   }
   document.getElementById('panelsbtn').addEventListener('click', function () { showPanelManager(activePanel); });
+
+  /* ---------- dialogue from the script: speech bubbles, bursts, narration boxes, glow text, sound effects ---------- */
+  var BUB_FONT = '"Arial Narrow", "Helvetica Neue", Arial, sans-serif';
+  function bubbleLayout(kind, text, maxW) {
+    var c = document.createElement('canvas').getContext('2d'), fs = kind === 'sfx' ? 64 : 32, words = String(text).toUpperCase().split(/\s+/).filter(Boolean), lines = [], cur2 = '';
+    c.font = (kind === 'sfx' ? '900 italic ' : '700 ') + fs + 'px ' + BUB_FONT;
+    words.forEach(function (w) { var tryL = cur2 ? cur2 + ' ' + w : w; if (cur2 && c.measureText(tryL).width > maxW) { lines.push(cur2); cur2 = w; } else cur2 = tryL; });
+    if (cur2) lines.push(cur2); if (!lines.length) lines = [' '];
+    var tw = Math.max.apply(null, lines.map(function (s) { return c.measureText(s).width; })), th = lines.length * fs * 1.15, w, h;
+    if (kind === 'shout') { w = tw * 1.55 + 80; h = th * 1.6 + 70; }
+    else if (kind === 'narration' || kind === 'glow' || kind === 'sfx') { w = tw + 40; h = th + 30; }
+    else { w = tw * 1.4 + 56; h = th * 1.4 + 52; }
+    return { fs: fs, lines: lines, w: Math.round(w), h: Math.round(h) };
+  }
+  function drawBubble(op) {
+    var x = op.x, y = op.y, w = op.w, h = op.h, cx = x + w / 2, cy = y + h / 2, rx = w / 2, ry = h / 2, k = op.k, i, a;
+    ctx.save(); ctx.lineJoin = 'round'; ctx.lineCap = 'round'; ctx.lineWidth = 4; ctx.strokeStyle = '#111'; ctx.fillStyle = k === 'narration' ? '#f6f1e1' : '#fff';
+    if (k === 'narration') { ctx.beginPath(); ctx.rect(x, y, w, h); ctx.fill(); ctx.stroke(); }
+    else if (k === 'shout') {
+      var n = 18; ctx.beginPath();
+      for (i = 0; i < n * 2; i++) { a = i * Math.PI / n; var r = i % 2 ? 0.74 : 1 + ((i * 7) % 5) * 0.025; ctx.lineTo(cx + Math.cos(a) * rx * r, cy + Math.sin(a) * ry * r); }
+      ctx.closePath(); ctx.fill(); ctx.stroke();
+    } else if (k !== 'glow' && k !== 'sfx') {
+      ctx.setLineDash(k === 'whisper' ? [12, 9] : []); ctx.beginPath(); ctx.ellipse(cx, cy, rx, ry, 0, 0, 6.2832); ctx.fill(); ctx.stroke(); ctx.setLineDash([]);
+      var tx = op.tx, ty = op.ty;
+      if (tx != null) {
+        a = Math.atan2(ty - cy, tx - cx);
+        if (k === 'thought') {
+          for (i = 1; i <= 3; i++) { var f = i / 4, bx = cx + Math.cos(a) * rx * (1 + f * 0.5) + (tx - cx) * f * 0.5, by = cy + Math.sin(a) * ry * (1 + f * 0.5) + (ty - cy) * f * 0.5, br = 12 - i * 3; ctx.beginPath(); ctx.arc(bx, by, br, 0, 6.2832); ctx.fill(); ctx.stroke(); }
+        } else {
+          var d = 0.3, p1 = [cx + rx * Math.cos(a - d), cy + ry * Math.sin(a - d)], p2 = [cx + rx * Math.cos(a + d), cy + ry * Math.sin(a + d)];
+          ctx.beginPath(); ctx.moveTo(cx + (p1[0] - cx) * 0.96, cy + (p1[1] - cy) * 0.96); ctx.lineTo(tx, ty); ctx.lineTo(cx + (p2[0] - cx) * 0.96, cy + (p2[1] - cy) * 0.96); ctx.closePath(); ctx.fillStyle = '#fff'; ctx.fill();
+          ctx.setLineDash(k === 'whisper' ? [12, 9] : []); ctx.beginPath(); ctx.moveTo(p1[0], p1[1]); ctx.lineTo(tx, ty); ctx.lineTo(p2[0], p2[1]); ctx.stroke();
+        }
+      }
+    }
+    var fs = op.fs, lh = fs * 1.15, y0 = cy - (op.lines.length - 1) * lh / 2; ctx.setLineDash([]); ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.font = (k === 'sfx' ? '900 italic ' : '700 ') + fs + 'px ' + BUB_FONT;
+    op.lines.forEach(function (s, j) {
+      var ly = y0 + j * lh;
+      if (k === 'glow') { ctx.shadowColor = '#fff'; ctx.shadowBlur = 16; ctx.fillStyle = '#fff'; for (i = 0; i < 3; i++) ctx.fillText(s, cx, ly); ctx.shadowBlur = 0; ctx.fillStyle = '#111'; ctx.fillText(s, cx, ly); }
+      else if (k === 'sfx') { ctx.lineWidth = 9; ctx.strokeStyle = '#111'; ctx.strokeText(s, cx, ly); ctx.fillStyle = '#fff'; ctx.fillText(s, cx, ly); }
+      else { ctx.fillStyle = '#111'; ctx.fillText(s, cx, ly); }
+    });
+    ctx.restore();
+  }
+  var scriptCache = {};
+  function loadScriptFor(pj, ch) {
+    return folderPath([DRIVE_ROOT, pj, 'script']).then(listFiles).then(function (fs) {
+      var f = fs.filter(function (x) { return x.name === 'Chapter ' + pad(ch, 2) + '.md'; })[0]; if (!f) return null;
+      return readDoc(f).then(parseScript);
+    });
+  }
+  function scriptPanelOf(sm, id) {
+    if (!sm || !id) return null;
+    for (var i = 0; i < sm.scenes.length; i++) for (var j = 0; j < sm.scenes[i].panels.length; j++) if (sm.scenes[i].panels[j].id === id) return { sc: sm.scenes[i], pn: sm.scenes[i].panels[j] };
+    return null;
+  }
+  function placeLine(ln, drawn) {
+    finishXform(); commitPending();
+    var old = layers.filter(function (L) { return L.line === ln.id; })[0]; if (old) deleteLayer(old);
+    if (layers.length >= MAX_LAYERS) { setStatus('One page can hold ' + MAX_LAYERS + ' layers. Delete one first.'); return; }
+    dropEmptyDefault();
+    var lay = bubbleLayout(ln.type, ln.text, Math.max(200, Math.min(380, drawn.w * 0.6))), below = drawn.y + 30;
+    layers.forEach(function (L) { if (L.panel === drawn.id && L.bub) below = Math.max(below, L.bub.y + L.bub.h + 24); });
+    var x = Math.min(Math.max(10, drawn.x + 30), Math.max(10, W - lay.w - 10)), y = below > H - lay.h - 10 ? drawn.y + 30 : below;
+    var op = { t: 'b', k: ln.type, x: x, y: y, w: lay.w, h: lay.h, fs: lay.fs, lines: lay.lines };
+    if (ln.type === 'speech' || ln.type === 'thought' || ln.type === 'whisper') { op.tx = x + lay.w * 0.3; op.ty = y + lay.h + 64; }
+    var spk = ln.name || '';
+    var L = newLayer({ component: 'text', panel: drawn.id, ref: ln.who && ln.who.indexOf('custom-') !== 0 ? ln.who : '', name: (spk ? spk + ': ' : '') + ln.text.slice(0, 22),
+      desc: scriptTypeName(ln.type) + (spk ? ' · ' + spk : '') + ': "' + ln.text + '"', line: ln.id, lineInfo: { id: ln.id, type: ln.type, who: ln.who, name: ln.name, text: ln.text } });
+    L.bub = { x: x, y: y, w: lay.w, h: lay.h + (op.tx != null ? 70 : 0) }; layers.push(L); activeL = L; activePanel = drawn.id; curComponent = 'text';
+    addOp(L, op, drawn.id); redrawLayer(L); paint(); renderLayers(); renderCompbar(); renderPanels(); selectTool('xform');
+    setStatus('Placed. Drag it where it belongs, then tap outside the box.');
+  }
+  function showScriptDialog() {
+    flush().then(function () {
+      if (!proj) return;
+      var ch = chapter, o = openPanel('Script · ' + chapterName(proj, ch)), body = o.querySelector('.xbody'), sm = null;
+      body.appendChild(mk('div', 'xnote', gHave() ? 'Loading the script…' : 'Connect Google Drive first (Notebook or Bible page, then Connect).'));
+      if (!gHave()) return;
+      function render() {
+        body.textContent = '';
+        if (!sm || !sm.scenes.length) { body.appendChild(mk('div', 'xnote', 'There is no script for this chapter yet. Write it on the Script page, then come back here.')); return; }
+        body.appendChild(mk('div', 'xnote', 'Link each script panel to the panel you drew. Then Place puts a line of dialogue into that panel as its own layer: drag it where it should sit.'));
+        sm.scenes.forEach(function (sc) {
+          body.appendChild(mk('div', 'scrh', 'Scene · ' + (sc.title || '(untitled)')));
+          sc.panels.forEach(function (sp) {
+            var card = mk('div', 'pcard'), head = mk('div', 'scrp'), linked = panelsList.filter(function (q) { return q.sp === sp.id; })[0];
+            var s = document.createElement('select'); s.className = 'charsel'; s.setAttribute('aria-label', 'Drawn panel for ' + sp.name);
+            var o0 = document.createElement('option'); o0.value = ''; o0.textContent = 'Not drawn on this page'; s.appendChild(o0);
+            panelsList.forEach(function (q) { var oo = document.createElement('option'); oo.value = q.id; oo.textContent = q.name; s.appendChild(oo); }); s.value = linked ? linked.id : '';
+            s.addEventListener('change', function () { panelsList.forEach(function (q) { if (q.sp === sp.id) delete q.sp; }); var q = panelById(s.value); if (q) q.sp = sp.id; panelsChanged(); render(); });
+            head.append(mk('b', '', sp.name), s); card.appendChild(head);
+            if (sp.desc) card.appendChild(mk('div', 'xnote', sp.desc));
+            sp.lines.forEach(function (ln) {
+              var row = mk('div', 'scrl'), placed = layers.some(function (L) { return L.line === ln.id; }), pb = bt(placed ? 'Place again' : 'Place', 'btn' + (placed ? '' : ' pri'));
+              row.append(mk('span', 'scrt', scriptTypeName(ln.type)), mk('span', 'scrx', (ln.name ? ln.name + ': ' : '') + ln.text));
+              if (placed) row.insertBefore(mk('span', 'scrok', '✓'), row.firstChild);
+              pb.disabled = !linked; pb.title = linked ? '' : 'Link this script panel to a drawn panel first';
+              pb.onclick = function () { closeX(o); placeLine(ln, linked); };
+              row.appendChild(pb); card.appendChild(row);
+            });
+            body.appendChild(card);
+          });
+        });
+      }
+      loadScriptFor(proj, ch).then(function (m) { sm = m; render(); }).catch(function (e) { body.textContent = ''; body.appendChild(mk('div', 'xnote', 'Could not load the script (' + msgOf(e) + ').')); });
+    });
+  }
+  document.getElementById('scriptbtn').addEventListener('click', showScriptDialog);
   var clipBtn = document.getElementById('clipbtn');
   clipBtn.addEventListener('click', function () { clipOn = !clipOn; clipBtn.setAttribute('aria-pressed', String(clipOn)); setStatus(clipOn ? 'Drawing is kept inside the selected panel.' : 'Drawing is free again.'); });
   function clipArg() { var pn = clipOn && activePanel ? panelById(activePanel) : null; return pn ? panelPts(pn).map(function (q) { return [q[0], q[1]]; }) : null; }
@@ -1474,7 +1617,7 @@ dl.facts dd { margin: 0; }
       return seq.then(function () { return compBlob; }).then(function (b) { if (!b) throw new Error('could not make image'); return assets.upload(b, 'png'); }).then(function (up) {
         var comp = up.id;
         snaps.forEach(function (s) { if (s && s.path) { s.L.asset = s.path; if (s.L.ver === s.ver) s.L.dirty = false; } });
-        var manifest = { v: 2, height: h, panels: pans, composite: comp, layers: lys.map(function (L) { return { id: L.id, panel: L.panel, component: L.component, ref: L.ref, name: L.name, desc: L.desc, visible: true, flat: L.flat, asset: L.asset }; }) };
+        var manifest = { v: 2, height: h, panels: pans, composite: comp, layers: lys.map(function (L) { return { id: L.id, panel: L.panel, component: L.component, ref: L.ref, name: L.name, desc: L.desc, visible: true, flat: L.flat, asset: L.asset, line: L.line || null, lineInfo: L.lineInfo || null }; }) };
         return assets.upload(new Blob([JSON.stringify(manifest)], { type: 'application/json' }), 'json').then(function (mp) {
           p.assetId = mp.id; p.comp = comp; p.mani = manifest; p.height = h; p.updatedAt = new Date().toISOString(); p.thumb = thumb;
           p.docAssets = [mp.id, comp].concat(lys.map(function (L) { return L.asset; }).filter(Boolean));
@@ -1576,7 +1719,7 @@ dl.facts dd { margin: 0; }
     } else {
       var m = d.m; if ((m.height || 0) > H) setCanvasHeight(m.height);
       d.rs.forEach(function (r) {
-        var L = newLayer({ id: r.ml.id, panel: r.ml.panel, component: r.ml.component, ref: r.ml.ref, name: r.ml.name, desc: r.ml.desc, visible: r.ml.visible, flat: r.ml.flat, asset: r.ml.asset, base: r.im });
+        var L = newLayer({ id: r.ml.id, panel: r.ml.panel, component: r.ml.component, ref: r.ml.ref, name: r.ml.name, desc: r.ml.desc, visible: r.ml.visible, flat: r.ml.flat, asset: r.ml.asset, base: r.im, line: r.ml.line, lineInfo: r.ml.lineInfo });
         var n = /(\d+)$/.exec(L.id); if (n) lidSeq = Math.max(lidSeq, +n[1]); layers.push(L); redrawLayer(L);
       });
       panelsList = (m.panels || []).map(function (q) { return q; }); panelsList.forEach(function (q) { var n = /(\d+)$/.exec(q.id); if (n) pidSeq = Math.max(pidSeq, +n[1]); });
@@ -1655,7 +1798,7 @@ dl.facts dd { margin: 0; }
 
   /* ---------- start ---------- */
   /* ---------- navigation: project chooser + Notebook / Bible / Sketchbook ---------- */
-  var VIEWS = { choose: 'v-choose', notebook: 'v-notebook', bible: 'v-bible', sketch: 'v-sketch' };
+  var VIEWS = { choose: 'v-choose', notebook: 'v-notebook', bible: 'v-bible', script: 'v-script', sketch: 'v-sketch' };
   function remember() { try { localStorage.setItem('ml-nav', JSON.stringify({ proj: proj, view: view })); } catch (e) {} }
   function setView(v) {
     view = v;
@@ -1665,7 +1808,7 @@ dl.facts dd { margin: 0; }
     var chip = document.getElementById('projchip'); chip.hidden = !inProj; if (p) chip.textContent = p.name + ' ▾';
     document.querySelectorAll('.tab').forEach(function (b) { if (b.dataset.view === v) b.setAttribute('aria-current', 'page'); else b.removeAttribute('aria-current'); });
     if (v === 'sketch' && autoFit) fit();
-    if (v === 'notebook' || v === 'bible') libs[v].show();
+    if (v === 'notebook' || v === 'bible' || v === 'script') libs[v].show();
     if (v === 'choose') buildCards();
     document.title = 'moth-lantern';
     remember();
@@ -2666,6 +2809,161 @@ dl.facts dd { margin: 0; }
     };
   }
 
+
+  /* ----- the story script: scenes > panels > lines. One markdown file per chapter in Drive: <project>/script/Chapter 01.md ----- */
+  var SCRIPT_TYPES = [
+    { k: 'speech', n: 'Speech bubble' }, { k: 'thought', n: 'Thought' }, { k: 'shout', n: 'Shout (burst)' }, { k: 'whisper', n: 'Whisper' },
+    { k: 'narration', n: 'Narration box' }, { k: 'glow', n: 'Glow text on art' }, { k: 'sfx', n: 'Sound effect' }
+  ];
+  function scriptTypeName(k) { var f = SCRIPT_TYPES.filter(function (x) { return x.k === k; })[0]; return f ? f.n : k; }
+  function oneLine(s) { return String(s).replace(/\s*\n\s*/g, ' ').trim(); }
+  function parseScript(tx) {
+    var m = { scenes: [] }, sc = null, pn = null, mm, maxN = 0;
+    function seen(id) { var n = /(\d+)$/.exec(id || ''); if (n) maxN = Math.max(maxN, +n[1]); }
+    String(tx).split(/\r?\n/).forEach(function (ln) {
+      if ((mm = /^###\s+(.*?)(?:\s*\{#([\w-]+)\})?\s*$/.exec(ln))) {
+        if (!sc) { sc = { id: '', title: '', note: '', panels: [] }; m.scenes.push(sc); }
+        pn = { id: mm[2] || '', name: mm[1], desc: '', lines: [] }; sc.panels.push(pn); seen(pn.id); return;
+      }
+      if ((mm = /^##\s+(.*?)(?:\s*\{#([\w-]+)\})?\s*$/.exec(ln))) {
+        sc = { id: mm[2] || '', title: mm[1].replace(/^Scene:?\s*/i, ''), note: '', panels: [] }; m.scenes.push(sc); pn = null; seen(sc.id); return;
+      }
+      if (!sc) return;
+      if (pn && (mm = /^-\s+(?:\[([\w-]+)\]\s+)?(.*?)(?:\s+\{([\w-]+)\})?\s*\((\w+)\):\s?(.*)$/.exec(ln))) {
+        var who = mm[2].trim(); pn.lines.push({ id: mm[1] || '', who: mm[3] || '', name: who === '-' ? '' : who, type: mm[4], text: mm[5] }); seen(mm[1]); return;
+      }
+      if (/^#\s/.test(ln)) return;
+      var tgt = pn ? 'desc' : 'note', o = pn || sc;
+      if (ln.trim() || o[tgt]) o[tgt] += (o[tgt] ? '\n' : '') + ln;
+    });
+    m.scenes.forEach(function (s) {
+      s.note = s.note.trim();
+      s.panels.forEach(function (p) { p.desc = p.desc.trim(); });
+    });
+    var n = maxN;
+    m.scenes.forEach(function (s) {
+      if (!s.id) s.id = 's' + (++n);
+      s.panels.forEach(function (p) { if (!p.id) p.id = 'p' + (++n); p.lines.forEach(function (l) { if (!l.id) l.id = 'l' + (++n); }); });
+    });
+    m.next = n; return m;
+  }
+  function serScript(m, title) {
+    var o = ['# ' + title + ': script', ''];
+    m.scenes.forEach(function (s, si) {
+      o.push('## Scene: ' + (s.title || 'Scene ' + (si + 1)) + ' {#' + s.id + '}', '');
+      if (s.note) o.push(s.note, '');
+      s.panels.forEach(function (p) {
+        o.push('### ' + (p.name || 'Panel') + ' {#' + p.id + '}', '');
+        if (p.desc) o.push(p.desc, '');
+        p.lines.forEach(function (l) { o.push('- [' + l.id + '] ' + (l.name || '-') + (l.who ? ' {' + l.who + '}' : '') + ' (' + l.type + '): ' + oneLine(l.text)); });
+        if (p.lines.length) o.push('');
+      });
+    });
+    return o.join('\n');
+  }
+  function pageScript(ctx) {
+    var pj = proj, host = ctx.host, m = null, chap = chapter || 1, saver = null, chars = [], listing = null, bodyEl, openP = {};
+    function fname(n) { return 'Chapter ' + pad(n, 2) + '.md'; }
+    function title() { return chapterName(pj, chap); }
+    function newId(pfx) { return pfx + (++m.next); }
+    function changed(re) { saver.mark(900); if (re) draw(); }
+    function makeSv() {
+      var f = ctx.file(fname(chap));
+      saver = makeSaver(function () { return f; }, function (nf) { f = nf; }, [DRIVE_ROOT, pj, 'script'], fname(chap), function () { return serScript(m, title()); }, ctx.status);
+    }
+    function load() {
+      ctx.status('Loading…'); var f = ctx.file(fname(chap));
+      var p = f ? readDoc(f) : Promise.resolve('');
+      return p.then(function (tx) { m = parseScript(tx); if (!m.scenes.length) { m.next = m.next || 0; } makeSv(); ctx.status(''); draw(); });
+    }
+    function sel(opts, val, label, cls) {
+      var s = document.createElement('select'); s.className = cls || 'charsel'; s.setAttribute('aria-label', label);
+      opts.forEach(function (o) { var e = document.createElement('option'); e.value = o.v; e.textContent = o.t; s.appendChild(e); }); s.value = val; return s;
+    }
+    function field(tag, val, ph, cb, cls, label) {
+      var e = document.createElement(tag); if (cls) e.className = cls; e.value = val; e.placeholder = ph; e.setAttribute('aria-label', label || ph);
+      e.addEventListener('input', function () { cb(e.value); changed(false); if (tag === 'textarea') { e.style.height = 'auto'; e.style.height = e.scrollHeight + 'px'; } });
+      if (tag === 'textarea') setTimeout(function () { e.style.height = 'auto'; e.style.height = e.scrollHeight + 'px'; }, 0);
+      return e;
+    }
+    function move(arr, i, d) { var j = i + d; if (j < 0 || j >= arr.length) return; var x = arr[i]; arr[i] = arr[j]; arr[j] = x; changed(true); }
+    function armDel(b, fn) {
+      b.addEventListener('click', function () {
+        if (!b.classList.contains('armed')) { b.classList.add('armed'); b.dataset.t = b.textContent; b.textContent = 'Sure?'; setTimeout(function () { b.classList.remove('armed'); b.textContent = b.dataset.t; }, 3000); return; }
+        fn();
+      });
+    }
+    function speakers() {
+      var o = [{ v: '', t: 'No speaker' }]; chars.forEach(function (c) { o.push({ v: c.id, t: c.name }); });
+      o.push({ v: '__other', t: 'Someone else…' }); return o;
+    }
+    function lineRow(p, l, i) {
+      var row = mk('div', 'sl'), top = mk('div', 'slrow');
+      var spk = sel(speakers(), l.who || '', 'Speaker');
+      if (l.who && !chars.some(function (c) { return c.id === l.who; })) { var ex = document.createElement('option'); ex.value = l.who; ex.textContent = l.name || l.who; spk.insertBefore(ex, spk.options[1]); spk.value = l.who; }
+      spk.addEventListener('change', function () {
+        if (spk.value === '__other') { var nm = prompt('Speaker name'); if (!nm || !nm.trim()) { spk.value = l.who || ''; return; } l.who = 'custom-' + slug(nm); l.name = nm.trim(); }
+        else { l.who = spk.value; var c = chars.filter(function (x) { return x.id === l.who; })[0]; l.name = c ? c.name : ''; }
+        changed(true);
+      });
+      var ty = sel(SCRIPT_TYPES.map(function (x) { return { v: x.k, t: x.n }; }), l.type, 'Kind of line');
+      ty.addEventListener('change', function () { l.type = ty.value; changed(false); });
+      var up = bt('↑', 'btn ghost sq'), dn = bt('↓', 'btn ghost sq'), dl = bt('✕', 'btn ghost sq');
+      up.setAttribute('aria-label', 'Move line up'); dn.setAttribute('aria-label', 'Move line down'); dl.setAttribute('aria-label', 'Delete line');
+      up.onclick = function () { move(p.lines, i, -1); }; dn.onclick = function () { move(p.lines, i, 1); };
+      armDel(dl, function () { p.lines.splice(i, 1); changed(true); });
+      top.append(spk, ty, up, dn, dl);
+      row.append(top, field('textarea', l.text, 'What is said…', function (v) { l.text = v; }, 'sltext', 'Line text'));
+      return row;
+    }
+    function panelCard(s, p, pi) {
+      var d = mk('details', 'sp'); d.open = openP[p.id] !== false; d.addEventListener('toggle', function () { openP[p.id] = d.open; });
+      var sm = mk('summary'), nm = p.name || 'Panel'; sm.append(mk('b', '', nm), mk('span', 'cnt', p.lines.length + (p.lines.length === 1 ? ' line' : ' lines'))); d.appendChild(sm);
+      var inner = mk('div', 'spin');
+      inner.append(field('input', p.name, 'Panel name, e.g. Panel 1', function (v) { p.name = v; }, 'spname', 'Panel name'),
+        field('textarea', p.desc, 'What the panel shows: camera, who is there, what happens, mood', function (v) { p.desc = v; }, 'spdesc', 'Panel description'));
+      p.lines.forEach(function (l, i) { inner.appendChild(lineRow(p, l, i)); });
+      var acts = mk('div', 'acts'), al = bt('+ Line', 'btn'), up = bt('↑ Panel', 'btn ghost'), dn = bt('↓ Panel', 'btn ghost'), dl = bt('Delete panel', 'btn ghost danger');
+      al.onclick = function () { var last = p.lines[p.lines.length - 1]; p.lines.push({ id: newId('l'), who: last ? last.who : '', name: last ? last.name : '', type: 'speech', text: '' }); openP[p.id] = true; changed(true); };
+      up.onclick = function () { move(s.panels, pi, -1); }; dn.onclick = function () { move(s.panels, pi, 1); };
+      armDel(dl, function () { s.panels.splice(pi, 1); changed(true); });
+      acts.append(al, up, dn, dl); inner.appendChild(acts); d.appendChild(inner); return d;
+    }
+    function draw() {
+      bodyEl.textContent = '';
+      if (!m.scenes.length) bodyEl.appendChild(mk('div', 'empty', 'No script for this chapter yet. Add the first scene, then the panels in it, then each line of dialogue.'));
+      m.scenes.forEach(function (s, si) {
+        var card = mk('section', 'scene'), head = mk('div', 'scenehead');
+        head.append(mk('span', 'elab', 'Scene ' + (si + 1)), field('input', s.title, 'Scene title', function (v) { s.title = v; }, 'sctitle', 'Scene title'));
+        var up = bt('↑', 'btn ghost sq'), dn = bt('↓', 'btn ghost sq'), dl = bt('✕', 'btn ghost sq'); dl.setAttribute('aria-label', 'Delete scene');
+        up.onclick = function () { move(m.scenes, si, -1); }; dn.onclick = function () { move(m.scenes, si, 1); }; armDel(dl, function () { m.scenes.splice(si, 1); changed(true); });
+        head.append(up, dn, dl); card.appendChild(head);
+        card.appendChild(field('textarea', s.note, 'Where and when, what this scene is for', function (v) { s.note = v; }, 'scnote', 'Scene note'));
+        s.panels.forEach(function (p, pi) { card.appendChild(panelCard(s, p, pi)); });
+        var ap = bt('+ Panel', 'btn'); ap.onclick = function () { var id = newId('p'); s.panels.push({ id: id, name: 'Panel ' + (s.panels.length + 1), desc: '', lines: [] }); openP[id] = true; changed(true); };
+        card.appendChild(ap); bodyEl.appendChild(card);
+      });
+      var as = bt('+ Scene', 'btn pri'); as.onclick = function () { var id = newId('s'); m.scenes.push({ id: id, title: '', note: '', panels: [] }); changed(true); }; bodyEl.appendChild(as);
+    }
+    function chapSelect() {
+      var meta = getMeta(pj), s = sel(meta.list.map(function (n) { return { v: String(n), t: chapterName(pj, n, meta) }; }), String(chap), 'Chapter', 'charsel chapsel');
+      s.addEventListener('change', function () {
+        var n = +s.value; saver.flush().then(function (ok) { if (!ok) { s.value = String(chap); return; } chap = n; load().catch(function (e) { ctx.fail(e, 'Could not load'); }); });
+      });
+      return s;
+    }
+    return {
+      render: function () {
+        host.innerHTML = '<div class="doc scriptpage"><div class="scripttop"></div><div class="scriptbody"></div></div>';
+        var top = host.querySelector('.scripttop'); bodyEl = host.querySelector('.scriptbody');
+        top.append(mk('span', 'elab', 'Chapter'), chapSelect(), mk('span', 'hint', 'Saves to Drive: ' + pj + '/script/Chapter NN.md'));
+        loadChars(pj).then(function (cs) { chars = cs; if (m) draw(); }).catch(function () {});
+        load().catch(function (e) { ctx.fail(e, 'Could not load'); });
+      },
+      flush: function () { return saver ? saver.flush() : Promise.resolve(true); }, retry: function () { if (saver) saver.flush(); }
+    };
+  }
+
   /* ----- plain files and the reference-image grid (the earlier file view) ----- */
   function pageLib(ctx) {
     var lib = null;
@@ -2680,8 +2978,8 @@ dl.facts dd { margin: 0; }
 
   /* ----- the hub: title, tabs, page ----- */
   function makeHub(root, kind) {
-    var folder = kind === 'bible' ? 'bible' : 'notebook';
-    var DEFS = kind === 'bible'
+    var folder = kind === 'bible' ? 'bible' : kind === 'script' ? 'script' : 'notebook';
+    var DEFS = kind === 'script' ? [{ k: 'script', label: 'Story script', always: true, make: pageScript }] : kind === 'bible'
       ? [{ k: 'canon', label: 'Canon', file: 'canon.md', make: pageCanon }, { k: 'timeline', label: 'Timeline', file: 'timeline.md', make: pageTimeline },
          { k: 'characters', label: 'Characters', file: 'characters.md', make: pageCharacters }, { k: 'magic', label: 'Magic', file: 'magic.md', make: pageMagic },
          { k: 'files', label: 'Files', make: pageLib }, { k: 'refs', label: 'References', make: pageLib }]
@@ -2717,7 +3015,7 @@ dl.facts dd { margin: 0; }
     }
     function show() {
       var pj = projOf(proj); root.style.setProperty('--pa', pj.color); nameEl.textContent = pj.name;
-      subEl.textContent = kind === 'bible' ? 'The story bible: everything settled so far, kept as files in your Google Drive.' : 'Your ideas for this story. Claude reads new ideas at the start of every story session and marks each one Processed.';
+      subEl.textContent = kind === 'script' ? 'The story script, chapter by chapter: scenes, panels and every line of dialogue. The Sketchbook uses it to place the dialogue.' : kind === 'bible' ? 'The story bible: everything settled so far, kept as files in your Google Drive.' : 'Your ideas for this story. Claude reads new ideas at the start of every story session and marks each one Processed.';
       if (!gHave()) { renderConnect(); return; }
       connBtn.hidden = true; status('Loading…'); var tok = ++token;
       folderPath([DRIVE_ROOT, proj, folder]).then(listFiles).then(function (list) {
@@ -2849,7 +3147,43 @@ dl.facts dd { margin: 0; }
     (mani.panels || []).forEach(function (pn) { x.strokeStyle = '#2f64d6'; x.lineWidth = 3; x.setLineDash([12, 8]); x.strokeRect(pn.x, pn.y, pn.w, pn.h); x.setLineDash([]); x.font = '600 22px sans-serif'; x.fillStyle = '#2f64d6'; x.fillText(pn.name, pn.x + 8, pn.y + 26); });
     return canvasBlob(c);
   }
-  function pageDescription(p, pageNo, chapName, mani, items, panelFiles) {
+  function scriptModelOf(p) {
+    var k = p.id.indexOf('sage-') === 0 ? 'sage' : p.id.indexOf('born-') === 0 ? 'born' : 'tea', ch = chapOf(k, p.id);
+    return loadScriptFor(k, ch);
+  }
+  /* the story side of one panel: what the script says, who speaks, and where each placed line sits */
+  function dialogueMd(pn, its, sm) {
+    var hit = scriptPanelOf(sm, pn.sp), out = [], placed = {}, ref = { x: pn.x, y: pn.y, w: pn.w, h: pn.h };
+    its.forEach(function (it) { if (it.ml.line) placed[it.ml.line] = it; });
+    if (hit) {
+      out.push('Script panel: **' + hit.pn.name + '** (scene: ' + (hit.sc.title || 'untitled') + ')');
+      if (hit.sc.note) out.push('Scene: ' + hit.sc.note);
+      if (hit.pn.desc) out.push('What the script says happens: ' + hit.pn.desc);
+    } else out.push('Script panel: (not linked to a script panel)');
+    var lines = hit ? hit.pn.lines : its.filter(function (it) { return it.ml.lineInfo; }).map(function (it) { return it.ml.lineInfo; });
+    if (lines.length) {
+      out.push('', 'Dialogue to letter into this panel (burn it into the final image, in this reading order):');
+      lines.forEach(function (ln, i) {
+        var it = placed[ln.id];
+        out.push((i + 1) + '. ' + (ln.name ? '**' + ln.name + '**' : '(no speaker)') + (ln.who ? ' (character id `' + ln.who + '`)' : '') + ' · ' + scriptTypeName(ln.type) + ': "' + ln.text + '" · ' + (it && it.bbox ? 'placed ' + placeWords(it.bbox, ref) : 'not placed in the sketch yet'));
+      });
+    }
+    return out;
+  }
+  function panelBrief(p, pageNo, chapName, pn, cropName, items, sm) {
+    var its = items.filter(function (it) { return (it.ml.panel || null) === pn.id; }), art = its.filter(function (it) { return !it.ml.line; }), ref = { x: pn.x, y: pn.y, w: pn.w, h: pn.h };
+    var md = ['# ' + pn.name + ' · page ' + pageNo + ' (' + chapName + ')', '',
+      'Render THIS panel on its own, as a finished picture. Do not redo the rest of the page. The sketch to follow is `' + cropName + '` (same folder). Save the finished picture next to it as `' + cropName.replace(/\.png$/, '_render.png') + '`. If this panel needs a revision, only this one file is redone.', '',
+      pn.pts && pn.pts.length >= 3 ? 'The frame is a freeform shape (' + pn.pts.length + ' corners); the sketch crop is white outside it.' : 'The frame is a rectangle.', '',
+      '## Panel notes', '', (pn.notes || '').trim() || '(none)', '', '## Story and dialogue', ''].concat(dialogueMd(pn, its, sm), ['', '## What is drawn (back to front)', '']);
+    if (!art.length) md.push('(no drawing layers in this panel)');
+    art.forEach(function (it) {
+      md.push('- **' + (it.ml.name || compOf(it.ml.component).n) + '** — ' + compOf(it.ml.component).n + (it.ml.ref ? ' (character id `' + it.ml.ref + '` in the Bible: use its character sheet)' : '') + (it.bbox ? ' — ' + placeWords(it.bbox, ref) : ''));
+      md.push('  - ' + ((it.ml.desc || '').trim() || '(no description)'));
+    });
+    return md.join('\n');
+  }
+  function pageDescription(p, pageNo, chapName, mani, items, panelFiles, sm) {
     var h = mani.height || DEFAULT_H, md = ['# Page ' + pageNo + ' · ' + p.id + ' (' + chapName + ')', '',
       'Size ' + W + ' × ' + h + ' px. Layers are listed back to front: the first one in a group is furthest back, the last is in front. Positions are where the drawn lines are, inside the panel.', ''];
     md.push('Files in this folder: `map.png` (every layer in its component colour, panels outlined), `layers/` (each layer alone on a transparent page, numbered back to front), `panels/` (the finished drawing cropped to each panel), `page.json` (the same facts for programs). The flat page is `../' + pad(pageNo, 3) + '_' + p.id + '.png`.', '');
@@ -2861,10 +3195,12 @@ dl.facts dd { margin: 0; }
       if (!g.pn && !its.length) return;
       if (g.pn) {
         var shape = g.pn.pts && g.pn.pts.length >= 3 ? 'Freeform frame with ' + g.pn.pts.length + ' corners: ' + g.pn.pts.map(function (q) { return '(' + q[0] + ',' + q[1] + ')'; }).join(' \u2192 ') + ' (back to the first). Bounding box: x ' + g.pn.x + ', y ' + g.pn.y + ', ' + g.pn.w + ' \u00d7 ' + g.pn.h + ' px.' : 'Panel box on the page: x ' + g.pn.x + ', y ' + g.pn.y + ', ' + g.pn.w + ' \u00d7 ' + g.pn.h + ' px.';
-        md.push('## ' + g.pn.name, '', shape + ' The crop shows only what is inside the frame, white outside: `' + (panelFiles[g.pn.id] || '') + '`.', '', 'Panel notes: ' + ((g.pn.notes || '').trim() || '(none)'), '');
+        md.push('## ' + g.pn.name, '', shape + ' The crop shows only what is inside the frame, white outside: `' + (panelFiles[g.pn.id] || '') + '`. Each panel is rendered on its own from its brief `' + (panelFiles[g.pn.id] || '').replace(/\.png$/, '.md') + '`.', '', 'Panel notes: ' + ((g.pn.notes || '').trim() || '(none)'), '');
+        dialogueMd(g.pn, its, sm).forEach(function (s) { md.push(s); }); md.push('');
       } else md.push('## Layers not in a panel', '');
       if (its.length) md.push('Back to front: ' + its.map(function (it) { return it.ml.name || compOf(it.ml.component).n; }).join(' → '), '');
       its.forEach(function (it) {
+        if (it.ml.line && g.pn) return;
         var ml = it.ml, line = '- **' + (ml.name || compOf(ml.component).n) + '** — ' + compOf(ml.component).n + (ml.ref ? ' (character id `' + ml.ref + '` in the Bible)' : '') + ' — `layers/' + it.fname + '`';
         md.push(line);
         if (it.bbox) md.push('  - Position: ' + placeWords(it.bbox, g.pn ? { x: g.pn.x, y: g.pn.y, w: g.pn.w, h: g.pn.h } : { x: 0, y: 0, w: W, h: h }));
@@ -2880,6 +3216,7 @@ dl.facts dd { margin: 0; }
   }
   /* page folder: page.md, page.json, map.png, layers/, panels/ (rebuilt whenever the page changed) */
   function exportDetail(p, cfid, base, ex, pageNo, chapName) {
+    var sm = null, smP = scriptModelOf(p).then(function (m) { sm = m; }, function () {});
     return getManifest(p).then(function (mani) {
       if (!mani) { if (ex) trashFile(ex.id).catch(function () {}); return null; }
       var dfidP = ex ? (ex.name === base ? Promise.resolve(ex.id) : patchMeta(ex.id, { name: base }).then(function () { ex.name = base; return ex.id; })) : mkFolder(cfid, base);
@@ -2892,19 +3229,20 @@ dl.facts dd { margin: 0; }
           return Promise.all(items.map(function (it) {
             if (!it.ml.asset) return null;
             return assets.download(it.ml.asset).then(function (blob) { it.blob = blob; return blobImg(blob); }).then(function (r) { it.im = r.im; urls.push(r.u); it.bbox = bboxOf(r.im, it.ml.flat); });
-          })).then(function () { return getComposite(p); }).then(blobImg).then(function (cr) {
+          })).then(function () { return smP; }).then(function () { return getComposite(p); }).then(blobImg).then(function (cr) {
             urls.push(cr.u); var seq = Promise.resolve(), panelFiles = {};
             items.forEach(function (it) { if (it.blob) seq = seq.then(function () { return createFile(lfid, it.fname, 'image/png', it.blob); }); });
             (mani.panels || []).forEach(function (pn, i) {
               var fname = (i + 1) + '_' + (slug(pn.name) || 'panel') + '.png'; panelFiles[pn.id] = 'panels/' + fname;
               seq = seq.then(function () { return cropBlob(cr.im, pn.x, pn.y, pn.w, pn.h, panelPts(pn)); }).then(function (b) { return createFile(pfid, fname, 'image/png', b); });
+              seq = seq.then(function () { return createFile(pfid, fname.replace(/\.png$/, '.md'), 'text/markdown', panelBrief(p, pageNo, chapName, pn, fname, items, sm)); });
             });
             seq = seq.then(function () { return mapBlob(items, mani); }).then(function (b) { return createFile(dfid, 'map.png', 'image/png', b); });
-            seq = seq.then(function () { return createFile(dfid, 'page.md', 'text/markdown', pageDescription(p, pageNo, chapName, mani, items, panelFiles)); });
+            seq = seq.then(function () { return createFile(dfid, 'page.md', 'text/markdown', pageDescription(p, pageNo, chapName, mani, items, panelFiles, sm)); });
             seq = seq.then(function () {
               var json = { page: { id: p.id, number: pageNo, chapter: chapName, width: W, height: mani.height || DEFAULT_H, notes: p.notes || '' },
-                panels: (mani.panels || []).map(function (pn) { return { id: pn.id, name: pn.name, x: pn.x, y: pn.y, w: pn.w, h: pn.h, corners: pn.pts || null, notes: pn.notes || '', crop: panelFiles[pn.id] || null }; }),
-                layers: items.map(function (it, i) { return { order: i + 1, name: it.ml.name, component: it.ml.component, character: it.ml.ref || null, panel: it.ml.panel || null, description: it.ml.desc || '', file: it.blob ? 'layers/' + it.fname : null, bbox: it.bbox || null }; }) };
+                panels: (mani.panels || []).map(function (pn) { return { id: pn.id, name: pn.name, x: pn.x, y: pn.y, w: pn.w, h: pn.h, corners: pn.pts || null, notes: pn.notes || '', crop: panelFiles[pn.id] || null, brief: (panelFiles[pn.id] || '').replace(/\.png$/, '.md') || null, scriptPanel: pn.sp || null }; }),
+                layers: items.map(function (it, i) { return { order: i + 1, name: it.ml.name, component: it.ml.component, character: it.ml.ref || null, panel: it.ml.panel || null, description: it.ml.desc || '', file: it.blob ? 'layers/' + it.fname : null, bbox: it.bbox || null, scriptLine: it.ml.lineInfo || null }; }) };
               return createFile(dfid, 'page.json', 'application/json', JSON.stringify(json, null, 1));
             });
             return seq.then(function () { urls.forEach(function (u) { URL.revokeObjectURL(u); }); return mani; });
@@ -3033,6 +3371,7 @@ dl.facts dd { margin: 0; }
 
   libs.notebook = makeHub(document.getElementById('v-notebook'), 'notebook');
   libs.bible = makeHub(document.getElementById('v-bible'), 'bible');
+  libs.script = makeHub(document.getElementById('v-script'), 'script');
   window.addEventListener('pagehide', function () { Object.keys(libs).forEach(function (k) { libs[k].flush(); }); });
 
   /* ---------- sign in / boot ---------- */
