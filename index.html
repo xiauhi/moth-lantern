@@ -267,6 +267,9 @@ dl.facts dd { margin: 0; }
 .scriptpage input, .scriptpage textarea { width: 100%; box-sizing: border-box; background: var(--bg); color: var(--fg); border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; font: 15px/1.45 var(--font-body); }
 .scriptpage textarea { resize: none; overflow: hidden; min-height: 44px; }
 .scriptpage select { min-height: 44px; }
+.scriptkey { display: flex; flex-wrap: wrap; gap: 4px 18px; margin: 12px 0; color: var(--muted); font: 13px/1.5 var(--font-body); }
+.scriptkey b { color: var(--fg); font-family: ui-monospace, Consolas, monospace; font-weight: 600; }
+.scriptpage .scripttext { min-height: 360px; font: 16px/1.6 var(--font-body); padding: 14px 16px; white-space: pre-wrap; }
 .scriptpage .sq { min-width: 44px; padding: 0; justify-content: center; }
 .sp { border: 1px solid var(--line); border-radius: 10px; background: color-mix(in srgb, var(--bg) 60%, var(--panel)); }
 .sp > summary { display: flex; align-items: center; gap: 10px; min-height: 48px; padding: 0 12px; cursor: pointer; list-style: none; }
@@ -979,7 +982,7 @@ dl.facts dd { margin: 0; }
   function loadScriptFor(pj, ch) {
     return folderPath([DRIVE_ROOT, pj, 'script']).then(listFiles).then(function (fs) {
       var f = fs.filter(function (x) { return x.name === 'Chapter ' + pad(ch, 2) + '.md'; })[0]; if (!f) return null;
-      return readDoc(f).then(parseScript);
+      return readDoc(f).then(function (tx) { return loadChars(pj).catch(function () { return []; }).then(function (cs) { return parseScript(scriptIsLegacy(tx) ? legacyToText(tx) : tx, cs); }); });
     });
   }
   function scriptPanelOf(sm, id) {
@@ -2829,136 +2832,73 @@ dl.facts dd { margin: 0; }
   ];
   function scriptTypeName(k) { var f = SCRIPT_TYPES.filter(function (x) { return x.k === k; })[0]; return f ? f.n : k; }
   function oneLine(s) { return String(s).replace(/\s*\n\s*/g, ' ').trim(); }
-  function parseScript(tx) {
-    var m = { scenes: [] }, sc = null, pn = null, mm, maxN = 0;
-    function seen(id) { var n = /(\d+)$/.exec(id || ''); if (n) maxN = Math.max(maxN, +n[1]); }
+  /* The script is plain text, one file per chapter (Drive: <project>/script/Chapter 01.md):
+       [1-2]                      page 1, panel 2 (the heading of a panel)
+       plain text                 what the panel shows
+       Name : words               speech bubble
+       Name : (words)             thought
+       *words*                    narration (italic)
+       {words}                    lettering drawn on the art, e.g. a sound effect  */
+  function panelKeyName(k) { var m = /^(\d+)\s*[-.]\s*(\d+)$/.exec(k); return m ? 'Page ' + m[1] + ' · Panel ' + m[2] : k; }
+  function lineHash(s) { var h = 5381; for (var i = 0; i < s.length; i++) h = ((h << 5) + h + s.charCodeAt(i)) | 0; return (h >>> 0).toString(36); }
+  function parseScript(tx, chars) {
+    var sc = { id: 's1', title: '', note: '', panels: [] }, pn = null, mm, usedP = {}, usedL = {};
+    function who(nm) { var c = (chars || []).filter(function (x) { return x.name.toLowerCase() === nm.toLowerCase(); })[0]; return c ? c.id : 'custom-' + slug(nm); }
+    String(tx).split(/\r?\n/).forEach(function (raw) {
+      var ln = raw.trim();
+      if ((mm = /^\[([^\]]+)\]$/.exec(ln))) {
+        var key = mm[1].trim(), id = 'p' + slug(key), n = usedP[id] = (usedP[id] || 0) + 1; if (n > 1) id += '_' + n;
+        pn = { id: id, name: panelKeyName(key), desc: '', lines: [] }; sc.panels.push(pn); return;
+      }
+      if (!ln) return;
+      var ty = null, nm = '', t = '';
+      if ((mm = /^\{(.+)\}$/.exec(ln))) { ty = 'sfx'; t = mm[1].trim(); }
+      else if ((mm = /^(\*|_)(.+)\1$/.exec(ln))) { ty = 'narration'; t = mm[2].trim(); }
+      else if ((mm = /^([^:{}\[\]*.!?,]{1,30}?)\s*[:：]\s*(.+)$/.exec(ln)) && mm[1].trim().split(/\s+/).length <= 3) {
+        nm = mm[1].trim(); t = mm[2].trim(); ty = 'speech';
+        var th = /^\((.*)\)$/.exec(t); if (th) { ty = 'thought'; t = th[1].trim(); }
+      }
+      if (!ty || !t) { if (pn) pn.desc += (pn.desc ? '\n' : '') + ln; else sc.note += (sc.note ? '\n' : '') + ln; return; }
+      if (!pn) { pn = { id: 'p-start', name: 'Before the first panel', desc: '', lines: [] }; sc.panels.push(pn); }
+      var base = pn.id + '.' + lineHash(ty + '|' + nm + '|' + t), k2 = usedL[base] = (usedL[base] || 0) + 1;
+      pn.lines.push({ id: k2 > 1 ? base + '_' + k2 : base, who: nm ? who(nm) : '', name: nm, type: ty, text: t });
+    });
+    return { scenes: [sc], next: 0 };
+  }
+  /* old files (## Scene / ### Panel / - [l3] Name (type): text) are turned into the plain format once, when opened */
+  function legacyToText(tx) {
+    var mm, lines = [];
     String(tx).split(/\r?\n/).forEach(function (ln) {
-      if ((mm = /^###\s+(.*?)(?:\s*\{#([\w-]+)\})?\s*$/.exec(ln))) {
-        if (!sc) { sc = { id: '', title: '', note: '', panels: [] }; m.scenes.push(sc); }
-        pn = { id: mm[2] || '', name: mm[1], desc: '', lines: [] }; sc.panels.push(pn); seen(pn.id); return;
+      if ((mm = /^###\s+(.*?)(?:\s*\{#([\w-]+)\})?\s*$/.exec(ln))) { lines.push('', '[' + mm[1] + ']'); return; }
+      if ((mm = /^##\s+(.*?)(?:\s*\{#([\w-]+)\})?\s*$/.exec(ln))) { var sc = mm[1].replace(/^Scene:?\s*/i, ''); if (sc) lines.push('', 'Scene: ' + sc); return; }
+      if ((mm = /^-\s+(?:\[([\w-]+)\]\s+)?(.*?)(?:\s+\{([\w-]+)\})?\s*\((\w+)\):\s?(.*)$/.exec(ln))) {
+        var nm = mm[2].trim() === '-' ? '' : mm[2].trim(), ty = mm[4], t = mm[5];
+        lines.push(ty === 'narration' ? '*' + t + '*' : ty === 'sfx' || ty === 'glow' ? '{' + t + '}' : (nm || 'Someone') + ' : ' + (ty === 'thought' ? '(' + t + ')' : t)); return;
       }
-      if ((mm = /^##\s+(.*?)(?:\s*\{#([\w-]+)\})?\s*$/.exec(ln))) {
-        sc = { id: mm[2] || '', title: mm[1].replace(/^Scene:?\s*/i, ''), note: '', panels: [] }; m.scenes.push(sc); pn = null; seen(sc.id); return;
-      }
-      if (!sc) return;
-      if (pn && (mm = /^-\s+(?:\[([\w-]+)\]\s+)?(.*?)(?:\s+\{([\w-]+)\})?\s*\((\w+)\):\s?(.*)$/.exec(ln))) {
-        var who = mm[2].trim(); pn.lines.push({ id: mm[1] || '', who: mm[3] || '', name: who === '-' ? '' : who, type: mm[4], text: mm[5] }); seen(mm[1]); return;
-      }
-      if (/^#\s/.test(ln)) return;
-      var tgt = pn ? 'desc' : 'note', o = pn || sc;
-      if (ln.trim() || o[tgt]) o[tgt] += (o[tgt] ? '\n' : '') + ln;
+      if (/^#\s/.test(ln)) return; lines.push(ln);
     });
-    m.scenes.forEach(function (s) {
-      s.note = s.note.trim();
-      s.panels.forEach(function (p) { p.desc = p.desc.trim(); });
-    });
-    var n = maxN;
-    m.scenes.forEach(function (s) {
-      if (!s.id) s.id = 's' + (++n);
-      s.panels.forEach(function (p) { if (!p.id) p.id = 'p' + (++n); p.lines.forEach(function (l) { if (!l.id) l.id = 'l' + (++n); }); });
-    });
-    m.next = n; return m;
+    return lines.join('\n').replace(/^\n+/, '').replace(/\n{3,}/g, '\n\n') + '\n';
   }
-  function serScript(m, title) {
-    var o = ['# ' + title + ': script', ''];
-    m.scenes.forEach(function (s, si) {
-      o.push('## Scene: ' + (s.title || 'Scene ' + (si + 1)) + ' {#' + s.id + '}', '');
-      if (s.note) o.push(s.note, '');
-      s.panels.forEach(function (p) {
-        o.push('### ' + (p.name || 'Panel') + ' {#' + p.id + '}', '');
-        if (p.desc) o.push(p.desc, '');
-        p.lines.forEach(function (l) { o.push('- [' + l.id + '] ' + (l.name || '-') + (l.who ? ' {' + l.who + '}' : '') + ' (' + l.type + '): ' + oneLine(l.text)); });
-        if (p.lines.length) o.push('');
-      });
-    });
-    return o.join('\n');
-  }
+  function scriptIsLegacy(tx) { return /^##\s/m.test(tx) || /^-\s+(\[[\w-]+\]\s+)?.*\(\w+\):/m.test(tx); }
   function pageScript(ctx) {
-    var pj = proj, host = ctx.host, m = null, chap = chapter || 1, saver = null, chars = [], listing = null, bodyEl, openP = {};
+    var pj = proj, host = ctx.host, text = '', chap = chapter || 1, saver = null, ta = null;
     function fname(n) { return 'Chapter ' + pad(n, 2) + '.md'; }
-    function title() { return chapterName(pj, chap); }
-    function newId(pfx) { return pfx + (++m.next); }
-    function changed(re) { saver.mark(900); if (re) draw(); }
     function makeSv() {
       var f = ctx.file(fname(chap));
-      saver = makeSaver(function () { return f; }, function (nf) { f = nf; }, [DRIVE_ROOT, pj, 'script'], fname(chap), function () { return serScript(m, title()); }, ctx.status);
+      saver = makeSaver(function () { return f; }, function (nf) { f = nf; }, [DRIVE_ROOT, pj, 'script'], fname(chap), function () { return text; }, ctx.status);
     }
+    function fit() { if (!ta) return; ta.style.height = 'auto'; ta.style.height = Math.max(360, ta.scrollHeight + 4) + 'px'; }
     function load() {
       ctx.status('Loading…'); var f = ctx.file(fname(chap));
       var p = f ? readDoc(f) : Promise.resolve('');
-      return p.then(function (tx) { m = parseScript(tx); if (!m.scenes.length) { m.next = m.next || 0; } makeSv(); ctx.status(''); draw(); });
-    }
-    function sel(opts, val, label, cls) {
-      var s = document.createElement('select'); s.className = cls || 'charsel'; s.setAttribute('aria-label', label);
-      opts.forEach(function (o) { var e = document.createElement('option'); e.value = o.v; e.textContent = o.t; s.appendChild(e); }); s.value = val; return s;
-    }
-    function field(tag, val, ph, cb, cls, label) {
-      var e = document.createElement(tag); if (cls) e.className = cls; e.value = val; e.placeholder = ph; e.setAttribute('aria-label', label || ph);
-      e.addEventListener('input', function () { cb(e.value); changed(false); if (tag === 'textarea') { e.style.height = 'auto'; e.style.height = e.scrollHeight + 'px'; } });
-      if (tag === 'textarea') setTimeout(function () { e.style.height = 'auto'; e.style.height = e.scrollHeight + 'px'; }, 0);
-      return e;
-    }
-    function move(arr, i, d) { var j = i + d; if (j < 0 || j >= arr.length) return; var x = arr[i]; arr[i] = arr[j]; arr[j] = x; changed(true); }
-    function armDel(b, fn) {
-      b.addEventListener('click', function () {
-        if (!b.classList.contains('armed')) { b.classList.add('armed'); b.dataset.t = b.textContent; b.textContent = 'Sure?'; setTimeout(function () { b.classList.remove('armed'); b.textContent = b.dataset.t; }, 3000); return; }
-        fn();
+      return p.then(function (tx) {
+        var legacy = scriptIsLegacy(tx); text = legacy ? legacyToText(tx) : tx; makeSv(); if (legacy) saver.mark(300);
+        ctx.status(''); if (ta) { ta.value = text; fit(); }
       });
-    }
-    function speakers() {
-      var o = [{ v: '', t: 'No speaker' }]; chars.forEach(function (c) { o.push({ v: c.id, t: c.name }); });
-      o.push({ v: '__other', t: 'Someone else…' }); return o;
-    }
-    function lineRow(p, l, i) {
-      var row = mk('div', 'sl'), top = mk('div', 'slrow');
-      var spk = sel(speakers(), l.who || '', 'Speaker');
-      if (l.who && !chars.some(function (c) { return c.id === l.who; })) { var ex = document.createElement('option'); ex.value = l.who; ex.textContent = l.name || l.who; spk.insertBefore(ex, spk.options[1]); spk.value = l.who; }
-      spk.addEventListener('change', function () {
-        if (spk.value === '__other') { var nm = prompt('Speaker name'); if (!nm || !nm.trim()) { spk.value = l.who || ''; return; } l.who = 'custom-' + slug(nm); l.name = nm.trim(); }
-        else { l.who = spk.value; var c = chars.filter(function (x) { return x.id === l.who; })[0]; l.name = c ? c.name : ''; }
-        changed(true);
-      });
-      var ty = sel(SCRIPT_TYPES.map(function (x) { return { v: x.k, t: x.n }; }), l.type, 'Kind of line');
-      ty.addEventListener('change', function () { l.type = ty.value; changed(false); });
-      var up = bt('↑', 'btn ghost sq'), dn = bt('↓', 'btn ghost sq'), dl = bt('✕', 'btn ghost sq');
-      up.setAttribute('aria-label', 'Move line up'); dn.setAttribute('aria-label', 'Move line down'); dl.setAttribute('aria-label', 'Delete line');
-      up.onclick = function () { move(p.lines, i, -1); }; dn.onclick = function () { move(p.lines, i, 1); };
-      armDel(dl, function () { p.lines.splice(i, 1); changed(true); });
-      top.append(spk, ty, up, dn, dl);
-      row.append(top, field('textarea', l.text, 'What is said…', function (v) { l.text = v; }, 'sltext', 'Line text'));
-      return row;
-    }
-    function panelCard(s, p, pi) {
-      var d = mk('details', 'sp'); d.open = openP[p.id] !== false; d.addEventListener('toggle', function () { openP[p.id] = d.open; });
-      var sm = mk('summary'), nm = p.name || 'Panel'; sm.append(mk('b', '', nm), mk('span', 'cnt', p.lines.length + (p.lines.length === 1 ? ' line' : ' lines'))); d.appendChild(sm);
-      var inner = mk('div', 'spin');
-      inner.append(field('input', p.name, 'Panel name, e.g. Panel 1', function (v) { p.name = v; }, 'spname', 'Panel name'),
-        field('textarea', p.desc, 'What the panel shows: camera, who is there, what happens, mood', function (v) { p.desc = v; }, 'spdesc', 'Panel description'));
-      p.lines.forEach(function (l, i) { inner.appendChild(lineRow(p, l, i)); });
-      var acts = mk('div', 'acts'), al = bt('+ Line', 'btn'), up = bt('↑ Panel', 'btn ghost'), dn = bt('↓ Panel', 'btn ghost'), dl = bt('Delete panel', 'btn ghost danger');
-      al.onclick = function () { var last = p.lines[p.lines.length - 1]; p.lines.push({ id: newId('l'), who: last ? last.who : '', name: last ? last.name : '', type: 'speech', text: '' }); openP[p.id] = true; changed(true); };
-      up.onclick = function () { move(s.panels, pi, -1); }; dn.onclick = function () { move(s.panels, pi, 1); };
-      armDel(dl, function () { s.panels.splice(pi, 1); changed(true); });
-      acts.append(al, up, dn, dl); inner.appendChild(acts); d.appendChild(inner); return d;
-    }
-    function draw() {
-      bodyEl.textContent = '';
-      if (!m.scenes.length) bodyEl.appendChild(mk('div', 'empty', 'No script for this chapter yet. Add the first scene, then the panels in it, then each line of dialogue.'));
-      m.scenes.forEach(function (s, si) {
-        var card = mk('section', 'scene'), head = mk('div', 'scenehead');
-        head.append(mk('span', 'elab', 'Scene ' + (si + 1)), field('input', s.title, 'Scene title', function (v) { s.title = v; }, 'sctitle', 'Scene title'));
-        var up = bt('↑', 'btn ghost sq'), dn = bt('↓', 'btn ghost sq'), dl = bt('✕', 'btn ghost sq'); dl.setAttribute('aria-label', 'Delete scene');
-        up.onclick = function () { move(m.scenes, si, -1); }; dn.onclick = function () { move(m.scenes, si, 1); }; armDel(dl, function () { m.scenes.splice(si, 1); changed(true); });
-        head.append(up, dn, dl); card.appendChild(head);
-        card.appendChild(field('textarea', s.note, 'Where and when, what this scene is for', function (v) { s.note = v; }, 'scnote', 'Scene note'));
-        s.panels.forEach(function (p, pi) { card.appendChild(panelCard(s, p, pi)); });
-        var ap = bt('+ Panel', 'btn'); ap.onclick = function () { var id = newId('p'); s.panels.push({ id: id, name: 'Panel ' + (s.panels.length + 1), desc: '', lines: [] }); openP[id] = true; changed(true); };
-        card.appendChild(ap); bodyEl.appendChild(card);
-      });
-      var as = bt('+ Scene', 'btn pri'); as.onclick = function () { var id = newId('s'); m.scenes.push({ id: id, title: '', note: '', panels: [] }); changed(true); }; bodyEl.appendChild(as);
     }
     function chapSelect() {
-      var meta = getMeta(pj), s = sel(meta.list.map(function (n) { return { v: String(n), t: chapterName(pj, n, meta) }; }), String(chap), 'Chapter', 'charsel chapsel');
+      var meta = getMeta(pj), s = document.createElement('select'); s.className = 'charsel chapsel'; s.setAttribute('aria-label', 'Chapter');
+      meta.list.forEach(function (n) { var o = document.createElement('option'); o.value = String(n); o.textContent = chapterName(pj, n, meta); s.appendChild(o); }); s.value = String(chap);
       s.addEventListener('change', function () {
         var n = +s.value; saver.flush().then(function (ok) { if (!ok) { s.value = String(chap); return; } chap = n; load().catch(function (e) { ctx.fail(e, 'Could not load'); }); });
       });
@@ -2966,10 +2906,12 @@ dl.facts dd { margin: 0; }
     }
     return {
       render: function () {
-        host.innerHTML = '<div class="doc scriptpage"><div class="scripttop"></div><div class="scriptbody"></div></div>';
-        var top = host.querySelector('.scripttop'); bodyEl = host.querySelector('.scriptbody');
+        host.innerHTML = '<div class="doc scriptpage"><div class="scripttop"></div><div class="scriptkey"></div><textarea class="scripttext" spellcheck="true" aria-label="Chapter script"></textarea></div>';
+        var top = host.querySelector('.scripttop'); ta = host.querySelector('.scripttext');
         top.append(mk('span', 'elab', 'Chapter'), chapSelect(), mk('span', 'hint', 'Saves to Drive: ' + pj + '/script/Chapter NN.md'));
-        loadChars(pj).then(function (cs) { chars = cs; if (m) draw(); }).catch(function () {});
+        host.querySelector('.scriptkey').innerHTML = '<div><b>[1-2]</b> page 1, panel 2</div><div>Plain text: what the panel shows</div><div><b>Name : </b>words said</div><div><b>Name : (</b>words<b>)</b> thought</div><div><i>*words*</i> narration</div><div><b>{</b>words<b>}</b> lettering on the art, e.g. a sound effect</div>';
+        ta.placeholder = '[1-1]\nA tea shop at dusk. Rain on the window.\nMei : Is anyone there?\nMei : (Please, not another ghost.)\n*The kettle began to sing.*\n{CLINK}';
+        ta.addEventListener('input', function () { text = ta.value; if (saver) saver.mark(900); fit(); });
         load().catch(function (e) { ctx.fail(e, 'Could not load'); });
       },
       flush: function () { return saver ? saver.flush() : Promise.resolve(true); }, retry: function () { if (saver) saver.flush(); }
