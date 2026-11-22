@@ -3270,7 +3270,7 @@ dl.facts dd { margin: 0; }
     }
     function show() {
       var pj = projOf(proj); root.style.setProperty('--pa', pj.color); nameEl.textContent = pj.name;
-      subEl.textContent = kind === 'script' ? 'The story script, chapter by chapter: scenes, panels and every line of dialogue. The Sketchbook uses it to place the dialogue.' : kind === 'bible' ? 'The story bible: everything settled so far, kept as files in your Google Drive.' : 'Your ideas for this story. Claude reads new ideas at the start of every story session and marks each one Processed.';
+      subEl.textContent = kind === 'script' ? 'The story script, one chapter at a time, written as plain text. The Sketchbook uses it to place the dialogue.' : kind === 'bible' ? 'The story bible: everything settled so far, kept as files in your Google Drive.' : 'Your ideas for this story. Claude reads new ideas at the start of every story session and marks each one Processed.';
       if (!gHave()) { renderConnect(); return; }
       connBtn.hidden = true; status('Loading…'); var tok = ++token;
       folderPath([DRIVE_ROOT, proj, folder]).then(listFiles).then(function (list) {
