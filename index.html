@@ -269,6 +269,28 @@ dl.facts dd { margin: 0; }
 .scriptpage select { min-height: 44px; }
 .scriptkey { display: flex; flex-wrap: wrap; gap: 4px 18px; margin: 12px 0; color: var(--muted); font: 13px/1.5 var(--font-body); }
 .scriptkey b { color: var(--fg); font-family: ui-monospace, Consolas, monospace; font-weight: 600; }
+.scriptpage .seg { display: inline-flex; gap: 0; }
+.scriptpage .seg .btn { border-radius: 0; min-height: 44px; }
+.scriptpage .seg .btn:first-child { border-radius: 8px 0 0 8px; }
+.scriptpage .seg .btn:last-child { border-radius: 0 8px 8px 0; margin-left: -1px; }
+.scriptpage .seg .btn[aria-pressed="true"] { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
+.scriptview { display: grid; gap: 2px; margin-top: 12px; }
+.scriptview[hidden], .scriptpage .scripttext[hidden] { display: none; }
+.cmthint { color: var(--muted); font: 13px/1.5 var(--font-body); margin: 6px 0 10px; }
+.sblk { position: relative; padding: 9px 44px 9px 12px; border-radius: 8px; border-left: 3px solid transparent; cursor: pointer; font: 16px/1.55 var(--font-body); min-height: 40px; box-sizing: border-box; }
+.sblk:hover, .sblk.open { background: var(--panel); }
+.sblk.has { border-left-color: var(--accent); }
+.sblk.head { margin-top: 16px; font-weight: 700; color: var(--accent); font-family: ui-monospace, Consolas, monospace; }
+.sblk.plain { color: var(--muted); }
+.sblk.narr .words { font-style: italic; }
+.sblk.sfx .words { font-weight: 800; letter-spacing: .04em; text-transform: uppercase; }
+.sblk .who { font-weight: 700; }
+.sblk .ccount { position: absolute; right: 10px; top: 9px; min-width: 22px; height: 22px; border-radius: 11px; background: var(--accent); color: var(--accent-ink); font: 700 12px/22px var(--font-body); text-align: center; }
+.cmt, .cmtnew { margin: 4px 0 8px 22px; padding: 10px 12px; border: 1px solid var(--line); border-left: 4px solid var(--accent); border-radius: 8px; background: var(--panel); display: grid; gap: 8px; }
+.cmt.done { opacity: .7; }
+.cmt .text { margin: 0; white-space: pre-wrap; }
+.scriptview textarea { width: 100%; box-sizing: border-box; min-height: 70px; resize: vertical; background: var(--bg); color: var(--fg); border: 1px solid var(--line); border-radius: 8px; padding: 10px 12px; font: 15px/1.45 var(--font-body); }
+.cquote { margin: 10px 0 0 22px; color: var(--muted); font: 13px/1.4 ui-monospace, Consolas, monospace; }
 .scriptpage .scripttext { min-height: 360px; font: 16px/1.6 var(--font-body); padding: 14px 16px; white-space: pre-wrap; }
 .scriptpage .sq { min-width: 44px; padding: 0; justify-content: center; }
 .sp { border: 1px solid var(--line); border-radius: 10px; background: color-mix(in srgb, var(--bg) 60%, var(--panel)); }
@@ -2880,41 +2902,144 @@ dl.facts dd { margin: 0; }
     return lines.join('\n').replace(/^\n+/, '').replace(/\n{3,}/g, '\n\n') + '\n';
   }
   function scriptIsLegacy(tx) { return /^##\s/m.test(tx) || /^-\s+(\[[\w-]+\]\s+)?.*\(\w+\):/m.test(tx); }
+  /* Comments on the script: kept in Drive next to the chapter, <project>/script/Chapter 01.comments.md, the same way the notebook keeps ideas.
+     Each comment quotes the line (or [page-panel] heading) it is about. Status "New" until Claude has revised the script for it and marks it "Processed". */
+  function parseCmts(tx) {
+    var head = [], items = [], cur = null, mm, started = false;
+    String(tx).split(/\r?\n/).forEach(function (ln) {
+      if ((mm = /^##\s+(.*?)\s\|\s(\d{4}-\d{2}-\d{2})\s\|\s(New|Processed)\s*$/.exec(ln))) { started = true; cur = { panel: mm[1], date: mm[2], status: mm[3], quote: '', body: [] }; items.push(cur); }
+      else if (!started) head.push(ln);
+      else if (!cur.quote && /^>\s?/.test(ln)) cur.quote = ln.replace(/^>\s?/, '');
+      else cur.body.push(ln);
+    });
+    items.forEach(function (it) { it.text = it.body.join('\n').trim(); delete it.body; });
+    return { head: head.join('\n').replace(/\s+$/, ''), items: items };
+  }
+  function serCmts(m, title) {
+    var head = (m.head || '# ' + title + ': script comments\n\nComments on this chapter\'s script, written in the app. Each one quotes the line it is about. Status "Processed" means the script was revised for it.\n\nNot yet processed: 0.').replace(/Not yet processed: \d+\./, 'Not yet processed: ' + m.items.filter(function (i) { return i.status !== 'Processed'; }).length + '.');
+    var out = [head, ''];
+    m.items.forEach(function (it) { out.push('## ' + it.panel + ' | ' + it.date + ' | ' + it.status, '', '> ' + it.quote, '', it.text.replace(/^##/gm, ' ##'), ''); });
+    return out.join('\n').replace(/\n{3,}/g, '\n\n').replace(/\s+$/, '') + '\n';
+  }
+  function scriptBlocks(tx) {
+    var out = [], panel = 'Before the first panel', mm;
+    String(tx).split(/\r?\n/).forEach(function (raw) {
+      var ln = raw.trim(); if (!ln) return;
+      var b = { raw: ln, panel: panel, kind: 'plain', who: '', t: ln };
+      if ((mm = /^\[([^\]]+)\]$/.exec(ln))) { panel = panelKeyName(mm[1].trim()); b.panel = panel; b.kind = 'head'; b.t = panel; }
+      else if ((mm = /^\{(.+)\}$/.exec(ln))) { b.kind = 'sfx'; b.t = mm[1].trim(); }
+      else if ((mm = /^(\*|_)(.+)\1$/.exec(ln))) { b.kind = 'narr'; b.t = mm[2].trim(); }
+      else if ((mm = /^([^:{}\[\]*.!?,]{1,30}?)\s*[:：]\s*(.+)$/.exec(ln)) && mm[1].trim().split(/\s+/).length <= 3) {
+        b.who = mm[1].trim(); b.t = mm[2].trim(); b.kind = 'say'; var th = /^\((.*)\)$/.exec(b.t); if (th) { b.kind = 'think'; b.t = th[1].trim(); }
+      }
+      out.push(b);
+    });
+    return out;
+  }
   function pageScript(ctx) {
-    var pj = proj, host = ctx.host, text = '', chap = chapter || 1, saver = null, ta = null;
+    var pj = proj, host = ctx.host, text = '', chap = chapter || 1, saver = null, ta = null, viewEl = null, mode = 'write', cm = { head: '', items: [] }, csaver = null, openB = null, editC = null, confirmC = null, bW = null, bC = null;
     function fname(n) { return 'Chapter ' + pad(n, 2) + '.md'; }
+    function cname(n) { return 'Chapter ' + pad(n, 2) + '.comments.md'; }
+    function title() { return chapterName(pj, chap); }
+    function today() { return new Date().toISOString().slice(0, 10); }
     function makeSv() {
-      var f = ctx.file(fname(chap));
+      var f = ctx.file(fname(chap)), cf = ctx.file(cname(chap));
       saver = makeSaver(function () { return f; }, function (nf) { f = nf; }, [DRIVE_ROOT, pj, 'script'], fname(chap), function () { return text; }, ctx.status);
+      csaver = makeSaver(function () { return cf; }, function (nf) { cf = nf; }, [DRIVE_ROOT, pj, 'script'], cname(chap), function () { return serCmts(cm, title()); }, ctx.status);
     }
     function fit() { if (!ta) return; ta.style.height = 'auto'; ta.style.height = Math.max(360, ta.scrollHeight + 4) + 'px'; }
     function load() {
-      ctx.status('Loading…'); var f = ctx.file(fname(chap));
-      var p = f ? readDoc(f) : Promise.resolve('');
-      return p.then(function (tx) {
-        var legacy = scriptIsLegacy(tx); text = legacy ? legacyToText(tx) : tx; makeSv(); if (legacy) saver.mark(300);
-        ctx.status(''); if (ta) { ta.value = text; fit(); }
+      ctx.status('Loading…'); var f = ctx.file(fname(chap)), cf = ctx.file(cname(chap));
+      return Promise.all([f ? readDoc(f) : Promise.resolve(''), cf ? readDoc(cf) : Promise.resolve('')]).then(function (r) {
+        var tx = r[0], legacy = scriptIsLegacy(tx); text = legacy ? legacyToText(tx) : tx; cm = parseCmts(r[1]); makeSv(); if (legacy) saver.mark(300);
+        ctx.status(''); openB = editC = confirmC = null; if (ta) { ta.value = text; fit(); } showMode();
       });
+    }
+    function newCount() { return cm.items.filter(function (c) { return c.status !== 'Processed'; }).length; }
+    function cchanged() { csaver.mark(600); drawView(); tabLabels(); }
+    function tabLabels() { if (bC) bC.textContent = 'Comments' + (cm.items.length ? ' (' + newCount() + ' new)' : ''); }
+    function showMode() {
+      if (!ta) return; ta.hidden = mode !== 'write'; viewEl.hidden = mode !== 'comment';
+      bW.setAttribute('aria-pressed', String(mode === 'write')); bC.setAttribute('aria-pressed', String(mode === 'comment')); tabLabels();
+      if (mode === 'comment') drawView(); else fit();
+    }
+    function cmtCard(c) {
+      var el = mk('div', 'cmt' + (c.status === 'Processed' ? ' done' : '')), meta = mk('div', 'imeta');
+      meta.append(mk('span', '', c.date), mk('span', 'tag', c.status === 'Processed' ? 'Processed' : 'New')); el.appendChild(meta);
+      if (editC === c) {
+        var t = document.createElement('textarea'); t.value = c.text; t.setAttribute('aria-label', 'Edit comment');
+        var a = mk('div', 'acts'), sv = bt('Save', 'btn pri'), cn = bt('Cancel', 'btn ghost');
+        sv.onclick = function () { var v = t.value.trim(); if (!v) return; c.text = v; c.status = 'New'; editC = null; cchanged(); }; cn.onclick = function () { editC = null; drawView(); };
+        a.append(sv, cn); el.append(t, a); setTimeout(function () { t.focus(); }, 0); return el;
+      }
+      el.appendChild(mk('p', 'text', c.text));
+      var acts = mk('div', 'acts');
+      if (confirmC === c) {
+        var sure = bt('Delete for good', 'btn danger'), keep = bt('Keep it', 'btn ghost');
+        sure.onclick = function () { cm.items = cm.items.filter(function (x) { return x !== c; }); confirmC = null; cchanged(); }; keep.onclick = function () { confirmC = null; drawView(); };
+        acts.append(sure, keep);
+      } else {
+        var ed = bt('Edit', 'btn ghost'), dl = bt('Delete', 'btn ghost');
+        ed.onclick = function () { editC = c; confirmC = null; drawView(); }; dl.onclick = function () { confirmC = c; editC = null; drawView(); };
+        acts.append(ed, dl);
+      }
+      el.appendChild(acts); return el;
+    }
+    function composer(b) {
+      var box = mk('div', 'cmtnew'), t = document.createElement('textarea'); t.placeholder = 'Your comment on this part…'; t.setAttribute('aria-label', 'New comment');
+      var a = mk('div', 'acts'), add = bt('Add comment', 'btn pri'), cn = bt('Cancel', 'btn ghost');
+      function go() { var v = t.value.trim(); if (!v) { t.focus(); return; } cm.items.push({ panel: b.panel, date: today(), status: 'New', quote: b.raw, text: v }); openB = null; cchanged(); }
+      add.onclick = go; cn.onclick = function () { openB = null; drawView(); };
+      t.addEventListener('keydown', function (e) { if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); go(); } });
+      a.append(add, cn, mk('span', 'hint', 'Ctrl + Enter to add')); box.append(t, a); setTimeout(function () { t.focus(); }, 0); return box;
+    }
+    function drawView() {
+      if (mode !== 'comment') return;
+      var keep = viewEl.parentNode ? window.scrollY : 0; viewEl.textContent = '';
+      var blocks = scriptBlocks(text), used = [];
+      viewEl.appendChild(mk('div', 'cmthint', blocks.length ? 'Tap any part of the script to comment on it. Claude reads new comments only when you ask it to process them.' : 'Nothing to comment on yet. Write the script first.'));
+      blocks.forEach(function (b, i) {
+        var mine = cm.items.filter(function (c) { if (used.indexOf(c) >= 0) return false; var hit = c.panel === b.panel && c.quote === b.raw; if (hit) used.push(c); return hit; });
+        var row = mk('div', 'sblk ' + b.kind + (mine.length ? ' has' : '') + (openB === i ? ' open' : '')); row.tabIndex = 0; row.setAttribute('role', 'button');
+        if (b.kind === 'say' || b.kind === 'think') { row.appendChild(mk('b', 'who', b.who)); row.appendChild(document.createTextNode(' ')); row.appendChild(mk('span', 'words', b.kind === 'think' ? '(' + b.t + ')' : b.t)); }
+        else if (b.kind === 'sfx') row.appendChild(mk('span', 'words', '{' + b.t + '}'));
+        else row.appendChild(mk('span', 'words', b.t));
+        if (mine.length) row.appendChild(mk('span', 'ccount', String(mine.length)));
+        var toggle = function () { openB = openB === i ? null : i; editC = confirmC = null; drawView(); };
+        row.addEventListener('click', toggle); row.addEventListener('keydown', function (e) { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); toggle(); } });
+        viewEl.appendChild(row);
+        mine.forEach(function (c) { viewEl.appendChild(cmtCard(c)); });
+        if (openB === i) viewEl.appendChild(composer(b));
+      });
+      var orphans = cm.items.filter(function (c) { return used.indexOf(c) < 0; });
+      if (orphans.length) {
+        viewEl.appendChild(mk('div', 'cmthint', 'Comments on parts that have since changed or been removed:'));
+        orphans.forEach(function (c) { viewEl.appendChild(mk('div', 'cquote', c.panel + ' · ' + c.quote)); viewEl.appendChild(cmtCard(c)); });
+      }
+      if (keep) window.scrollTo(0, keep);
     }
     function chapSelect() {
       var meta = getMeta(pj), s = document.createElement('select'); s.className = 'charsel chapsel'; s.setAttribute('aria-label', 'Chapter');
       meta.list.forEach(function (n) { var o = document.createElement('option'); o.value = String(n); o.textContent = chapterName(pj, n, meta); s.appendChild(o); }); s.value = String(chap);
       s.addEventListener('change', function () {
-        var n = +s.value; saver.flush().then(function (ok) { if (!ok) { s.value = String(chap); return; } chap = n; load().catch(function (e) { ctx.fail(e, 'Could not load'); }); });
+        var n = +s.value; Promise.all([saver.flush(), csaver.flush()]).then(function (r) { if (!r[0] || !r[1]) { s.value = String(chap); return; } chap = n; load().catch(function (e) { ctx.fail(e, 'Could not load'); }); });
       });
       return s;
     }
     return {
       render: function () {
-        host.innerHTML = '<div class="doc scriptpage"><div class="scripttop"></div><div class="scriptkey"></div><textarea class="scripttext" spellcheck="true" aria-label="Chapter script"></textarea></div>';
-        var top = host.querySelector('.scripttop'); ta = host.querySelector('.scripttext');
-        top.append(mk('span', 'elab', 'Chapter'), chapSelect(), mk('span', 'hint', 'Saves to Drive: ' + pj + '/script/Chapter NN.md'));
+        host.innerHTML = '<div class="doc scriptpage"><div class="scripttop"></div><div class="scriptkey"></div><textarea class="scripttext" spellcheck="true" aria-label="Chapter script"></textarea><div class="scriptview" hidden></div></div>';
+        var top = host.querySelector('.scripttop'); ta = host.querySelector('.scripttext'); viewEl = host.querySelector('.scriptview');
+        bW = bt('Write', 'btn'); bC = bt('Comments', 'btn'); bW.onclick = function () { mode = 'write'; showMode(); }; bC.onclick = function () { mode = 'comment'; showMode(); };
+        var seg = mk('div', 'seg'); seg.append(bW, bC);
+        top.append(mk('span', 'elab', 'Chapter'), chapSelect(), seg, mk('span', 'hint', 'Saves to Drive: ' + pj + '/script/Chapter NN.md'));
         host.querySelector('.scriptkey').innerHTML = '<div><b>[1-2]</b> page 1, panel 2</div><div>Plain text: what the panel shows</div><div><b>Name : </b>words said</div><div><b>Name : (</b>words<b>)</b> thought</div><div><i>*words*</i> narration</div><div><b>{</b>words<b>}</b> lettering on the art, e.g. a sound effect</div>';
         ta.placeholder = '[1-1]\nA tea shop at dusk. Rain on the window.\nMei : Is anyone there?\nMei : (Please, not another ghost.)\n*The kettle began to sing.*\n{CLINK}';
         ta.addEventListener('input', function () { text = ta.value; if (saver) saver.mark(900); fit(); });
         load().catch(function (e) { ctx.fail(e, 'Could not load'); });
       },
-      flush: function () { return saver ? saver.flush() : Promise.resolve(true); }, retry: function () { if (saver) saver.flush(); }
+      flush: function () { return Promise.all([saver ? saver.flush() : true, csaver ? csaver.flush() : true]).then(function (r) { return r[0] !== false && r[1] !== false; }); },
+      retry: function () { if (saver) saver.flush(); if (csaver) csaver.flush(); }
     };
   }
 
@@ -3270,7 +3395,7 @@ dl.facts dd { margin: 0; }
     }
     function show() {
       var pj = projOf(proj); root.style.setProperty('--pa', pj.color); nameEl.textContent = pj.name;
-      subEl.textContent = kind === 'script' ? 'The story script, one chapter at a time, written as plain text. The Sketchbook uses it to place the dialogue.' : kind === 'bible' ? 'The story bible: everything settled so far, kept as files in your Google Drive.' : 'Your ideas for this story. Claude reads new ideas at the start of every story session and marks each one Processed.';
+      subEl.textContent = kind === 'script' ? 'The story script, one chapter at a time, written as plain text. Switch to Comments to leave notes on any part; Claude reads new comments only when you ask it to process them.' : kind === 'bible' ? 'The story bible: everything settled so far, kept as files in your Google Drive.' : 'Your ideas for this story. Claude reads new ideas at the start of every story session and marks each one Processed.';
       if (!gHave()) { renderConnect(); return; }
       connBtn.hidden = true; status('Loading…'); var tok = ++token;
       folderPath([DRIVE_ROOT, proj, folder]).then(listFiles).then(function (list) {
